@@ -1312,18 +1312,21 @@ else:
     print("❌ Enhanced model training failed, using rule-based only")
 
 
-# Reply Analyzer & Lead Time Calculator dengan Enhanced Analysis
+# Reply Analyzer & Lead Time Calculator - FULLY FIXED VERSION
 class ReplyAnalyzer:
     def __init__(self):
+        # First Reply Indicators - action-oriented responses
         self.first_reply_indicators = [
             'cek', 'kami teruskan', 'kami diskusikan', 'kami cek dulu', 
-            'tunggu sebentar', 'mohon ditunggu', 'akan kami proses',
+            'tunggu sebentar', 'mohon ditunggu', 'akan kami proses', 'sedang kami proses',
             'mohon maaf', 'maaf', 'sangat disayangkan', 'kami turut prihatin',
             'bisa diinformasikan', 'bisa dibagikan', 'mohon konfirmasi',
             'bisa dikonfirmasi', 'tolong informasikan', 'sebentar ya',
-            'pengecekan', 'verifikasi', 'proses', 'kami bantu'
+            'pengecekan', 'verifikasi', 'proses', 'kami bantu', 'kami tindaklanjuti',
+            'akan dicek', 'dicek dulu', 'konfirmasi dulu', 'tunggu ya'
         ]
         
+        # Final Reply Indicators - solution-oriented responses
         self.final_reply_indicators = [
             'bisa menghubungi', 'silakan menghubungi', 'disarankan untuk',
             'berikut informasi', 'nomor telepon', 'alamat dealer', 
@@ -1333,16 +1336,20 @@ class ReplyAnalyzer:
             'cara mengaktifkan', 'langkah-langkah', 'penjelasan tentang',
             'harga mulai', 'biaya required', 'tarif berlaku', 'jam operasional',
             'alamat lengkap', 'syarat dan ketentuan', 'spesifikasi', 'fungsi',
-            'harga', 'biaya', 'tarif', 'promo', 'diskon', 'cara booking'
+            'jadi', 'kesimpulannya', 'intinya', 'solusi yang bisa dilakukan'
         ]
         
+        # Conversation Enders - closing messages
         self.conversation_enders = [
             'terima kasih', 'thanks', 'makasih', 'tks', 'sampai jumpa',
             'semoga membantu', 'apakah sudah jelas', 'apakah cukup',
             'apakah membantu', 'selamat', 'silahkan', 'sampai bertemu',
-            'goodbye', 'bye', 'dadah', 'apakah ada hal lain'
+            'goodbye', 'bye', 'dadah', 'apakah ada hal lain',
+            'apakah informasinya sudah cukup jelas', 'ada hal lain yang bisa dibantu',
+            'ada yang bisa dibantu lagi', 'apakah ada pertanyaan lain'
         ]
         
+        # Generic/Bot Replies - skip these
         self.generic_reply_patterns = [
             'terima kasih telah menghubungi',
             'silakan memilih dari menu',
@@ -1379,12 +1386,15 @@ class ReplyAnalyzer:
         
         if main_issue_type in ['serious', 'complaint']:
             first_reply = self._find_proper_first_reply(qa_pairs)
+            print(f"   First reply found: {first_reply is not None}")
         
         final_reply = self._find_proper_final_reply(qa_pairs, main_issue_type)
+        print(f"   Final reply found: {final_reply is not None}")
         
         # Jika final reply tidak ditemukan, cari yang paling mendekati
         if not final_reply:
             final_reply = self._find_best_final_reply_candidate(qa_pairs)
+            print(f"   Fallback final reply: {final_reply is not None}")
         
         # Calculate lead times
         lead_times = self._calculate_lead_times(qa_pairs, first_reply, final_reply, main_issue_type)
@@ -1409,37 +1419,57 @@ class ReplyAnalyzer:
         return first_reply, final_reply, analysis_result
     
     def _find_proper_first_reply(self, qa_pairs):
-        """Temukan first reply yang meaningful untuk serious/complaint"""
-        for pair in qa_pairs:
+        """Temukan first reply yang meaningful untuk serious/complaint - FIXED LOGIC"""
+        print("   🔍 Looking for proper FIRST reply...")
+        
+        for i, pair in enumerate(qa_pairs):
             if pair['is_answered']:
                 answer = pair['answer']
+                print(f"     Checking pair {i+1}: {answer[:50]}...")
                 
-                # Skip generic replies dan conversation enders
-                if self._is_generic_reply(answer) or self._is_conversation_ender(answer):
+                # SKIP conversation enders dan generic replies - PRIORITAS TINGGI
+                if (self._is_conversation_ender(answer) or 
+                    self._is_generic_reply(answer) or
+                    self._is_final_reply_type(answer)):
+                    print(f"       SKIPPED - Conversation ender/generic/final reply")
                     continue
                 
-                # Cek first reply indicators
+                # First reply harus mengandung action words atau acknowledgment
                 if any(indicator in answer.lower() for indicator in self.first_reply_indicators):
+                    print(f"       ✅ FOUND - First reply indicator detected")
                     return self._create_reply_object(pair, 'first_proper')
                 
                 # Atau ambil jawaban pertama yang cukup panjang dan mengandung action
-                if len(answer.split()) > 6 and self._contains_action_words(answer):
+                if len(answer.split()) > 4 and self._contains_action_words(answer):
+                    print(f"       ✅ FOUND - Action words detected")
                     return self._create_reply_object(pair, 'first_action')
         
-        return None
-    
-    def _find_proper_final_reply(self, qa_pairs, issue_type):
-        """Temukan final reply yang BENERAN menjawab masalah"""
-        meaningful_replies = []
-        
+        # Fallback: ambil jawaban pertama yang bukan ender
+        print("   🔍 Fallback: looking for any non-ender reply...")
         for pair in qa_pairs:
             if pair['is_answered']:
                 answer = pair['answer']
+                if not self._is_conversation_ender(answer) and not self._is_final_reply_type(answer):
+                    print(f"       ✅ FOUND - First non-ender reply")
+                    return self._create_reply_object(pair, 'first_fallback')
+        
+        print("   ❌ No suitable first reply found")
+        return None
+    
+    def _find_proper_final_reply(self, qa_pairs, issue_type):
+        """Temukan final reply yang BENERAN menjawab masalah - FIXED LOGIC"""
+        print("   🔍 Looking for proper FINAL reply...")
+        meaningful_replies = []
+        
+        for i, pair in enumerate(qa_pairs):
+            if pair['is_answered']:
+                answer = pair['answer']
+                print(f"     Checking pair {i+1}: {answer[:50]}...")
                 
                 # SKIP yang jelas-jelas bukan final answer
-                if (self._is_generic_reply(answer) or 
-                    self._is_conversation_ender(answer) or
+                if (self._is_generic_reply(answer) or
                     self._is_first_reply_type(answer)):
+                    print(f"       SKIPPED - Generic/first reply type")
                     continue
                 
                 # Score berdasarkan seberapa "final" reply ini
@@ -1448,39 +1478,56 @@ class ReplyAnalyzer:
                 # Bonus untuk final reply indicators
                 if any(indicator in answer.lower() for indicator in self.final_reply_indicators):
                     score += 3
+                    print(f"       +3 Final reply indicators")
+                
+                # Bonus untuk conversation enders (biasanya final)
+                if self._is_conversation_ender(answer):
+                    score += 2
+                    print(f"       +2 Conversation ender")
                 
                 # Bonus untuk panjang content (lebih comprehensive)
                 word_count = len(answer.split())
-                if word_count > 10:
-                    score += 2
-                elif word_count > 5:
+                if word_count > 15:  # Final reply biasanya lebih panjang
+                    score += 3
+                    print(f"       +3 Long reply ({word_count} words)")
+                elif word_count > 8:
                     score += 1
+                    print(f"       +1 Medium reply ({word_count} words)")
                 
                 # Bonus untuk mengandung informasi spesifik
-                if any(keyword in answer.lower() for keyword in ['nomor', 'alamat', 'harga', 'biaya', 'caranya', 'solusi']):
+                specific_keywords = ['nomor', 'alamat', 'harga', 'biaya', 'caranya', 'solusi', 
+                                   'bisa menghubungi', 'silakan menghubungi', 'prosedur', 'langkah']
+                if any(keyword in answer.lower() for keyword in specific_keywords):
                     score += 2
+                    print(f"       +2 Specific information")
                 
-                # Penalty untuk yang terlalu awal di conversation
-                position_penalty = max(0, (len(qa_pairs) - pair.get('position', 0)) / len(qa_pairs) * 2)
-                score += position_penalty
+                # Bonus untuk yang di akhir conversation
+                position = pair.get('position', 0)
+                position_bonus = max(0, (position / len(qa_pairs)) * 3)
+                score += position_bonus
+                print(f"       +{position_bonus:.1f} Position bonus ({position}/{len(qa_pairs)})")
                 
                 if score > 0:
                     meaningful_replies.append({
                         'pair': pair,
                         'score': score,
-                        'position': pair.get('position', 0),
+                        'position': position,
                         'word_count': word_count
                     })
+                    print(f"       ✅ Added to candidates (score: {score})")
         
         if meaningful_replies:
             # Pilih reply dengan score tertinggi
             best_reply = max(meaningful_replies, key=lambda x: x['score'])
+            print(f"   ✅ Selected final reply with score: {best_reply['score']}")
             return self._create_reply_object(best_reply['pair'], 'final_proper')
         
+        print("   ❌ No suitable final reply found")
         return None
     
     def _find_best_final_reply_candidate(self, qa_pairs):
         """Fallback: cari candidate terbaik untuk final reply"""
+        print("   🔍 Fallback: looking for best final reply candidate...")
         candidates = []
         
         for pair in qa_pairs:
@@ -1504,30 +1551,75 @@ class ReplyAnalyzer:
         
         if candidates:
             best_candidate = max(candidates, key=lambda x: x['score'])
+            print(f"   ✅ Selected fallback final reply")
             return self._create_reply_object(best_candidate['pair'], 'final_fallback')
         
         # Last resort: ambil jawaban terakhir yang bukan ender
         for pair in reversed(qa_pairs):
             if pair['is_answered'] and not self._is_conversation_ender(pair['answer']):
+                print(f"   ✅ Selected last resort final reply")
                 return self._create_reply_object(pair, 'final_last_resort')
         
         return None
     
-    def _contains_action_words(self, message):
-        """Cek apakah message mengandung action words"""
-        action_words = ['cek', 'proses', 'bantu', 'informasi', 'jelas', 'solusi', 'caranya']
-        return any(word in message.lower() for word in action_words)
-    
     def _is_first_reply_type(self, message):
-        """Cek apakah message lebih cocok sebagai first reply"""
+        """Cek apakah message lebih cocok sebagai first reply - IMPROVED"""
         message_lower = message.lower()
-        first_reply_words = ['tunggu', 'sebentar', 'cek', 'proses', 'maaf']
-        return any(word in message_lower for word in first_reply_words) and len(message_lower.split()) < 10
+        
+        # First reply indicators
+        first_reply_indicators = [
+            'tunggu', 'sebentar', 'cek', 'proses', 'maaf', 'kami cek', 
+            'akan kami', 'pengecekan', 'verifikasi', 'kami bantu', 'mohon ditunggu',
+            'sedang kami', 'kami proses', 'konfirmasi', 'tunggu ya'
+        ]
+        
+        # Jika mengandung first reply indicators dan tidak terlalu panjang
+        contains_first_indicator = any(indicator in message_lower for indicator in first_reply_indicators)
+        is_short = len(message_lower.split()) < 12
+        
+        return contains_first_indicator and is_short
+    
+    def _is_final_reply_type(self, message):
+        """Cek apakah message lebih cocok sebagai final reply - IMPROVED"""
+        message_lower = message.lower()
+        
+        # Final reply indicators
+        final_reply_indicators = [
+            'bisa menghubungi', 'silakan menghubungi', 'disarankan untuk', 'berikut informasi',
+            'nomor telepon', 'alamat dealer', 'bengkel resmi', 'jawabannya adalah', 'solusinya',
+            'bisa dilakukan', 'prosedurnya', 'caranya', 'call center', 'hotline', 
+            'customer service', 'info lengkap', 'cara mengaktifkan', 'langkah-langkah',
+            'penjelasan tentang', 'harga mulai', 'biaya required', 'tarif berlaku',
+            'apakah informasinya sudah cukup jelas', 'ada hal lain yang bisa dibantu',
+            'semoga membantu', 'terima kasih', 'kesimpulannya', 'jadi'
+        ]
+        
+        # Conversation enders biasanya final reply
+        if self._is_conversation_ender(message):
+            return True
+        
+        # Jika mengandung final reply indicators
+        return any(indicator in message_lower for indicator in final_reply_indicators)
+    
+    def _contains_action_words(self, message):
+        """Cek apakah message mengandung action words - IMPROVED"""
+        action_words = [
+            'cek', 'proses', 'bantu', 'informasi', 'jelas', 'solusi', 'caranya',
+            'kami teruskan', 'kami diskusikan', 'kami cek dulu', 'akan kami proses',
+            'bisa diinformasikan', 'bisa dibagikan', 'mohon konfirmasi', 'tolong informasikan',
+            'kami tindaklanjuti', 'akan dicek', 'dicek dulu', 'verifikasi'
+        ]
+        return any(word in message.lower() for word in action_words)
     
     def _is_conversation_ender(self, message):
         """Cek apakah message adalah penutup conversation"""
         message_lower = message.lower()
         return any(ender in message_lower for ender in self.conversation_enders)
+    
+    def _is_generic_reply(self, message):
+        """Cek apakah reply generic/template"""
+        message_lower = message.lower()
+        return any(pattern in message_lower for pattern in self.generic_reply_patterns)
     
     def _create_reply_object(self, pair, reply_type):
         """Create standardized reply object"""
@@ -1545,7 +1637,7 @@ class ReplyAnalyzer:
         }
     
     def _calculate_lead_times(self, qa_pairs, first_reply, final_reply, issue_type):
-        """Hitung semua lead times yang relevan - IMPROVED"""
+        """Hitung semua lead times yang relevan"""
         lead_times = {}
         
         if not qa_pairs or not qa_pairs[0]['is_answered']:
@@ -1817,11 +1909,6 @@ class ReplyAnalyzer:
         solution_indicators = ['solusi', 'jawaban', 'caranya', 'prosedur', 'bisa menghubungi', 'silakan menghubungi', 'bisa', 'dapat']
         return any(indicator in message.lower() for indicator in solution_indicators)
     
-    def _is_generic_reply(self, message):
-        """Cek apakah reply generic/template"""
-        message_lower = message.lower()
-        return any(pattern in message_lower for pattern in self.generic_reply_patterns)
-    
     def _get_quality_rating(self, score):
         """Convert quality score ke rating"""
         if score >= 5:
@@ -1870,88 +1957,11 @@ class ReplyAnalyzer:
         except:
             return "00:00:00"
 
-# InitializeReply Analyzer
+# Initialize Fixed Reply Analyzer
 reply_analyzer = ReplyAnalyzer()
 
-print("✅ PROPERLY FIXED Reply Analyzer & Lead Time Calculator Ready!")
+print("✅ FULLY FIXED Reply Analyzer & Lead Time Calculator Ready!")
 print("=" * 60)
-
-# Test dengan sample data
-if 'parser' in locals() and 'detector' in locals() and raw_df is not None:
-    sample_ticket_id = 'ead8d44e4914399b76af974a5169856e'
-    ticket_df = raw_df[raw_df['Ticket Number'] == sample_ticket_id]
-    qa_pairs = parser.parse_conversation(ticket_df)
-    
-    if qa_pairs:
-        print("🧪 TESTING PROPERLY FIXED REPLY ANALYSIS:")
-        
-        # Detect main issue
-        main_issue = detector.detect_main_issue(qa_pairs)
-        issue_type = main_issue['issue_type']
-        
-        print(f"   Main Issue Type: {issue_type}")
-        print(f"   Main Question: {main_issue['question'][:80]}...")
-        
-        # Analyze replies dengan fixed version
-        first_reply, final_reply, analysis = reply_analyzer.analyze_replies(qa_pairs, issue_type)
-        
-        # Display results
-        print(f"\n📊 PROPERLY FIXED REPLY ANALYSIS RESULTS:")
-        print(f"   First Reply Found: {analysis['reply_validation']['first_reply_found']}")
-        print(f"   Final Reply Found: {analysis['reply_validation']['final_reply_found']}")
-        print(f"   Quality Rating: {analysis['reply_validation']['quality_rating']}")
-        print(f"   Quality Score: {analysis['reply_validation']['quality_score']}")
-        print(f"   Recommendation: {analysis['reply_validation']['recommendation']}")
-        
-        # Lead Times
-        if analysis['lead_times']:
-            print(f"\n⏱️ LEAD TIMES:")
-            for key, value in analysis['lead_times'].items():
-                if 'minutes' in key and value is not None:
-                    print(f"   {key}: {value}")
-        
-        # Threshold Checks
-        if analysis['threshold_checks']:
-            print(f"\n🎯 THRESHOLD CHECKS:")
-            for key, value in analysis['threshold_checks'].items():
-                if 'exceeded' in key:
-                    status = "❌ EXCEEDED" if value else "✅ WITHIN LIMIT"
-                    actual = analysis['threshold_checks'].get(f"{key.replace('_exceeded', '_actual_minutes')}", 'N/A')
-                    threshold = analysis['threshold_checks'].get(f"{key.replace('_exceeded', '_threshold_minutes')}", 'N/A')
-                    print(f"   {key}: {status} ({actual}m vs {threshold}m)")
-        
-        # Performance Analysis
-        perf = analysis['performance_analysis']
-        print(f"\n📈 PERFORMANCE ANALYSIS:")
-        print(f"   Performance Rating: {perf['performance_rating'].upper()}")
-        if 'response_efficiency' in perf:
-            print(f"   Response Efficiency: {perf['response_efficiency'].upper()}")
-        if 'resolution_efficiency' in perf:
-            print(f"   Resolution Efficiency: {perf['resolution_efficiency'].upper()}")
-        
-        # Quality Assessment
-        quality = analysis['quality_assessment']
-        print(f"\n⭐ QUALITY ASSESSMENT:")
-        print(f"   First Reply Quality: {quality['first_reply_quality'].upper()}")
-        print(f"   Final Reply Quality: {quality['final_reply_quality'].upper()}")
-        print(f"   Overall Quality: {quality['overall_quality'].upper()}")
-        
-        # Show actual replies jika ada
-        if first_reply:
-            print(f"\n🔍 FIRST REPLY:")
-            print(f"   Time: {first_reply.get('lead_time_minutes', 'N/A')} minutes")
-            print(f"   Type: {first_reply.get('reply_type', 'N/A')}")
-            print(f"   Message: {first_reply['message'][:100]}...")
-        
-        if final_reply:
-            print(f"\n🎯 FINAL REPLY:")
-            print(f"   Time: {final_reply.get('lead_time_minutes', 'N/A')} minutes") 
-            print(f"   Type: {final_reply.get('reply_type', 'N/A')}")
-            print(f"   Message: {final_reply['message'][:100]}...")
-            if reply_analyzer._is_conversation_ender(final_reply['message']):
-                print(f"   ⚠️  WARNING: This appears to be a conversation ender, not a meaningful final answer!")
-
-
 # CELL 8 - CompleteAnalysisPipeline (FULL FIX)
 import time
 from datetime import datetime
