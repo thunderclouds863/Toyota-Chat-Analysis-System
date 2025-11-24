@@ -666,12 +666,30 @@ def display_main_issues_tab(results):
 
 def display_ticket_details(result):
     """Display detailed information for a single ticket"""
+    
     # Main Question
     st.markdown("### 📝 Main Question")
     st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
     st.caption(f"Detected as: {result['final_issue_type'].upper()} (Confidence: {result['detection_confidence']:.2f})")
     
-    # Special Cases Notes
+    # SPECIAL CASES SECTION
+    special_cases = result.get('_raw_reply_analysis', {}).get('special_cases', [])
+    if special_cases:
+        st.markdown("### 🚨 Special Conditions")
+        
+        for case in special_cases:
+            if case == 'customer_leave':
+                st.markdown(f'<div class="special-case">🚶 **Customer Leave**: Customer left conversation without response</div>', unsafe_allow_html=True)
+            elif case == 'escalation_reply':
+                st.markdown(f'<div class="special-case">🔄 **Escalation Required**: Issue needs follow-up from other team</div>', unsafe_allow_html=True)
+            elif case == 'first_as_final':
+                st.markdown(f'<div class="special-case">🔀 **First as Final**: Using first reply as final reply</div>', unsafe_allow_html=True)
+            elif case == 'customer_leave_final':
+                st.markdown(f'<div class="special-case">🚶 **Customer Leave Final**: Used last operator message due to customer leave</div>', unsafe_allow_html=True)
+            elif case == 'fallback_reply':
+                st.markdown(f'<div class="special-case">🔄 **Fallback Reply**: Used fallback reply method</div>', unsafe_allow_html=True)
+
+    # Additional special notes
     special_notes = []
     if result.get('customer_leave'):
         special_notes.append("🚶 **Customer Leave**: Customer left conversation without response")
@@ -681,7 +699,7 @@ def display_ticket_details(result):
         special_notes.append(f"📝 **Note**: {result['customer_leave_note']}")
     
     if special_notes:
-        st.markdown("### 🚨 Special Conditions")
+        st.markdown("### 📋 Additional Notes")
         for note in special_notes:
             st.markdown(f'<div class="special-case">{note}</div>', unsafe_allow_html=True)
     
@@ -713,7 +731,18 @@ def display_ticket_details(result):
     with col1:
         if result['final_reply_found']:
             final_reply_msg = result.get('final_reply_message', 'No message content available')
-            st.markdown(f'<div class="message-box"><strong>Final Reply:</strong> {final_reply_msg}</div>', unsafe_allow_html=True)
+            reply_type = result.get('_raw_reply_analysis', {}).get('final_reply', {}).get('reply_type', 'standard')
+            
+            # Add reply type badge
+            type_badge = ""
+            if 'escalation' in reply_type:
+                type_badge = "🔄 "
+            elif 'customer_leave' in reply_type:
+                type_badge = "🚶 "
+            elif 'first_as_final' in reply_type:
+                type_badge = "🔀 "
+            
+            st.markdown(f'<div class="message-box"><strong>Final Reply ({type_badge}{reply_type.replace("_", " ").title()}):</strong> {final_reply_msg}</div>', unsafe_allow_html=True)
         else:
             if result['final_issue_type'] == 'normal' and not result.get('customer_leave'):
                 st.error("❌ No final reply found - REQUIRED for normal issues")
@@ -729,14 +758,78 @@ def display_ticket_details(result):
     
     # Performance Metrics
     st.markdown("#### 📊 Performance Metrics")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        performance_color = {
+            'excellent': 'green',
+            'good': 'blue', 
+            'fair': 'orange',
+            'poor': 'red'
+        }.get(result['performance_rating'], 'gray')
+        
+        st.metric(
+            "Performance Rating", 
+            result['performance_rating'].upper(),
+            delta=None,
+            delta_color=performance_color
+        )
+    
+    with col2:
+        quality_color = "green" if result['quality_score'] >= 4 else "orange" if result['quality_score'] >= 2 else "red"
+        st.metric(
+            "Quality Score", 
+            f"{result['quality_score']}/6",
+            delta=None,
+            delta_color=quality_color
+        )
+    
+    with col3:
+        st.metric("Total Messages", result['total_messages'])
+    
+    with col4:
+        answer_rate = (result['answered_pairs'] / result['total_qa_pairs']) * 100 if result['total_qa_pairs'] > 0 else 0
+        st.metric("Answer Rate", f"{answer_rate:.1f}%")
+    
+    # Conversation Statistics
+    st.markdown("#### 📈 Conversation Statistics")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Performance Rating", result['performance_rating'].upper())
+        st.metric("Total Q-A Pairs", result['total_qa_pairs'])
+    
     with col2:
-        st.metric("Quality Score", f"{result['quality_score']}/6")
+        st.metric("Answered Pairs", result['answered_pairs'])
+    
     with col3:
-        st.metric("Total Messages", result['total_messages'])
+        st.metric("Unanswered Pairs", result['total_qa_pairs'] - result['answered_pairs'])
+    
+    # Raw Data Access (if available)
+    if st.checkbox("Show Raw Analysis Data"):
+        st.markdown("#### 🔧 Raw Analysis Data")
+        
+        if '_raw_qa_pairs' in result:
+            with st.expander("Q-A Pairs Raw Data"):
+                qa_data = []
+                for i, pair in enumerate(result['_raw_qa_pairs']):
+                    qa_data.append({
+                        'Pair': i + 1,
+                        'Question': pair.get('question', '')[:100] + '...',
+                        'Answered': '✅' if pair.get('is_answered') else '❌',
+                        'Answer': pair.get('answer', '')[:100] + '...' if pair.get('answer') else 'No Answer',
+                        'Lead Time (min)': pair.get('lead_time_minutes', 'N/A')
+                    })
+                st.dataframe(pd.DataFrame(qa_data))
+        
+        if '_raw_main_issue' in result:
+            with st.expander("Main Issue Detection Details"):
+                main_issue = result['_raw_main_issue']
+                st.json(main_issue)
+        
+        if '_raw_reply_analysis' in result:
+            with st.expander("Reply Analysis Details"):
+                reply_analysis = result['_raw_reply_analysis']
+                st.json(reply_analysis)
 
 def display_lead_time_tab(results, stats):
     """Display lead time analysis dengan breakdown per issue type"""
@@ -968,87 +1061,7 @@ def display_performance_tab(results, stats):
         df_perf_metrics = pd.DataFrame(perf_metrics)
         st.dataframe(df_perf_metrics, use_container_width=True)
 
-def display_special_cases_tab(results, stats):
-    """Display special cases analysis (customer leave & follow-up)"""
-    st.markdown("## 🚨 Special Cases Analysis")
-    
-    successful = [r for r in results if r['status'] == 'success']
-    
-    # Customer Leave Cases
-    customer_leave_cases = [r for r in successful if r.get('customer_leave')]
-    follow_up_cases = [r for r in successful if r.get('follow_up_ticket')]
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### 🚶 Customer Leave Cases")
-        if customer_leave_cases:
-            st.info(f"Found {len(customer_leave_cases)} conversations where customer left without response")
-            
-            leave_data = []
-            for result in customer_leave_cases:
-                leave_data.append({
-                    'Ticket ID': result['ticket_id'],
-                    'Issue Type': result['final_issue_type'],
-                    'Main Question': result['main_question'][:80] + '...',
-                    'Final Reply Used': '✅' if result['final_reply_found'] else '❌',
-                    'Performance': result['performance_rating'].upper()
-                })
-            
-            df_leave = pd.DataFrame(leave_data)
-            st.dataframe(df_leave, use_container_width=True)
-        else:
-            st.success("✅ No customer leave cases detected")
-    
-    with col2:
-        st.markdown("### 🔄 Follow-up Cases")
-        if follow_up_cases:
-            st.info(f"Found {len(follow_up_cases)} issues resolved in different tickets")
-            
-            follow_up_data = []
-            for result in follow_up_cases:
-                follow_up_data.append({
-                    'Original Ticket': result['ticket_id'],
-                    'Follow-up Ticket': result['follow_up_ticket'],
-                    'Issue Type': result['final_issue_type'],
-                    'Main Question': result['main_question'][:80] + '...',
-                    'Performance': result['performance_rating'].upper()
-                })
-            
-            df_follow_up = pd.DataFrame(follow_up_data)
-            st.dataframe(df_follow_up, use_container_width=True)
-        else:
-            st.success("✅ No follow-up cases detected")
-    
-    # Analysis of special cases impact
-    if customer_leave_cases or follow_up_cases:
-        st.markdown("### 📊 Impact Analysis")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if customer_leave_cases:
-                # Performance distribution for customer leave cases
-                perf_counts = pd.Series([r['performance_rating'] for r in customer_leave_cases]).value_counts()
-                fig_leave_perf = px.pie(
-                    values=perf_counts.values,
-                    names=perf_counts.index,
-                    title='Performance Distribution - Customer Leave Cases',
-                    color_discrete_sequence=px.colors.qualitative.Pastel
-                )
-                st.plotly_chart(fig_leave_perf, use_container_width=True)
-        
-        with col2:
-            if follow_up_cases:
-                # Issue type distribution for follow-up cases
-                issue_counts = pd.Series([r['final_issue_type'] for r in follow_up_cases]).value_counts()
-                fig_follow_up_issues = px.pie(
-                    values=issue_counts.values,
-                    names=issue_counts.index,
-                    title='Issue Type Distribution - Follow-up Cases',
-                    color_discrete_sequence=px.colors.qualitative.Set3
-                )
-                st.plotly_chart(fig_follow_up_issues, use_container_width=True)
+display_special_cases_tab
 
 def display_raw_data_tab(results):
     """Display raw data tab untuk melihat semua hasil parse"""
@@ -1190,4 +1203,5 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
 
