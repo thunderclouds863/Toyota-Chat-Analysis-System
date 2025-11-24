@@ -36,8 +36,8 @@ class Config:
     COMPLAINT_FINAL_REPLY_THRESHOLD = 7200  # 5 hari
     
     # Abandoned detection
-    ABANDONED_TIMEOUT_MINUTES = 30  # 30 menit tanpa response dari customer
-    CUSTOMER_LEAVE_TIMEOUT = 30  # 30 menit untuk detect customer leave
+    ABANDONED_TIMEOUT_MINUTES = 5  # 30 menit tanpa response dari customer
+    CUSTOMER_LEAVE_TIMEOUT = 5  # 30 menit untuk detect customer leave
     
     # Follow-up settings
     FOLLOWUP_SOURCES = {
@@ -3829,3 +3829,4 @@ if __name__ == "__main__":
     
     for ticket_id in problematic_tickets:
         debug_ticket_analysis(ticket_id, raw_df)
+
