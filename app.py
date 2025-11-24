@@ -411,7 +411,7 @@ def display_complete_results():
 
     with col3:
         if 'overall_lead_times' in stats:
-            avg_lead_time = stats['overall_lead_times'].get('final_reply_avg_minutes', 0)
+            avg_lead_time = stats['overall_lead_times'].get('first_reply_avg_minutes', 0)
             metric_value = f"{avg_lead_time:.1f} min"
         else:
             metric_value = "N/A"
@@ -424,15 +424,15 @@ def display_complete_results():
         """.format(metric_value), unsafe_allow_html=True)
 
     with col4:
-        if 'performance_distribution' in stats:
-            excellent = stats['performance_distribution'].get('excellent', 0)
-            metric_value = excellent
+        if 'overall_lead_times' in stats:
+            avg_lead_time = stats['overall_lead_times'].get('final_reply_avg_minutes', 0)
+            metric_value = f"{avg_lead_time:.1f} min"
         else:
             metric_value = "N/A"
         
         st.markdown("""
         <div class="metric-card">
-            <h3>Excellent</h3>
+            <h3>Avg Final Reply</h3>
             <h1>{}</h1>
         </div>
         """.format(metric_value), unsafe_allow_html=True)
