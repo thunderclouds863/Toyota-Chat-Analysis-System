@@ -417,10 +417,8 @@ def display_complete_results():
             metric_value = "N/A"
         
         st.markdown("""
-        <div class="metric-card">
-            <h3>Avg Final Reply</h3>
+            <h3>Avg First Reply</h3>
             <h1>{}</h1>
-        </div>
         """.format(metric_value), unsafe_allow_html=True)
 
     with col4:
