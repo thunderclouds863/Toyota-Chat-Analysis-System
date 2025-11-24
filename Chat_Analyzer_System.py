@@ -1333,7 +1333,7 @@ class ReplyAnalyzer:
         print(f"   ✅ Reply analysis completed - Special cases: {analysis_result['special_cases']}")
         return first_reply, final_reply, analysis_result
 
-        def _is_generic_reply(self, message):
+    def _is_generic_reply(self, message):
         """Skip generic/bot replies"""
         message_lower = str(message).lower()
         return any(pattern in message_lower for pattern in self.generic_reply_patterns)
@@ -3956,6 +3956,7 @@ if __name__ == "__main__":
     
     for ticket_id in problematic_tickets:
         debug_ticket_analysis(ticket_id, raw_df)
+
 
 
 
