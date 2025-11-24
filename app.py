@@ -50,12 +50,12 @@ st.markdown("""
         transition: all 0.3s ease;
         position: relative;
     }
-    
+
     .metric-card-minimal:hover {
         transform: translateY(-3px);
         box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
     }
-    
+
     .metric-card-minimal h3 {
         font-size: 0.8rem;
         color: #6c757d;
@@ -64,20 +64,27 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 0.8px;
     }
-    
+
     .metric-card-minimal h1 {
         font-size: 2.1rem;
         color: #2c3e50;
         margin: 0;
         font-weight: 700;
     }
-    
+
     .metric-card-minimal .icon {
         font-size: 1.5rem;
         margin-bottom: 10px;
         opacity: 0.8;
     }
-    
+            
+    .metric-card-minimal .subtext {
+        font-size: 0.75rem;
+        color: #6c757d;
+        margin-top: 5px;
+        font-weight: 500;
+    }
+
     /* Border colors untuk variasi */
     .metric-card-minimal.primary { border-top: 4px solid #3498db; }
     .metric-card-minimal.success { border-top: 4px solid #2ecc71; }
@@ -383,64 +390,76 @@ def display_complete_results():
     # Quick Stats
     col1, col2, col3, col4, col5 = st.columns(5)
 
+    card_styles = ["primary", "success", "warning", "info", "dark"]
+    icons = ["📊", "✅", "⏱️", "⭐", "🔍"]
+
     with col1:
-        st.markdown("""
-        <div class="metric-card">
+        total_tickets = stats.get('total_tickets', 0)
+        st.markdown(f"""
+        <div class="metric-card-minimal {card_styles[0]}">
+            <div class="icon">{icons[0]}</div>
             <h3>Total Tickets</h3>
-            <h1>{}</h1>
+            <h1>{total_tickets:,}</h1>
         </div>
-        """.format(stats.get('total_tickets', 0)), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     with col2:
         success_rate = stats.get('success_rate', 0) * 100
-        st.markdown("""
-        <div class="metric-card">
+        st.markdown(f"""
+        <div class="metric-card-minimal {card_styles[1]}">
+            <div class="icon">{icons[1]}</div>
             <h3>Success Rate</h3>
-            <h1>{:.1f}%</h1>
+            <h1>{success_rate:.1f}%</h1>
         </div>
-        """.format(success_rate), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     with col3:
         if 'overall_lead_times' in stats:
             avg_lead_time = stats['overall_lead_times'].get('final_reply_avg_minutes', 0)
-            metric_value = f"{avg_lead_time:.1f} min"
+            metric_value = f"{avg_lead_time:.1f}"
         else:
             metric_value = "N/A"
         
-        st.markdown("""
-        <div class="metric-card">
-            <h3>Avg Final Reply</h3>
-            <h1>{}</h1>
+        st.markdown(f"""
+        <div class="metric-card-minimal {card_styles[2]}">
+            <div class="icon">{icons[2]}</div>
+            <h3>Avg Response</h3>
+            <h1>{metric_value}</h1>
+            <div class="subtext">minutes</div>
         </div>
-        """.format(metric_value), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     with col4:
         if 'performance_distribution' in stats:
             excellent = stats['performance_distribution'].get('excellent', 0)
-            metric_value = excellent
+            metric_value = f"{excellent}"
         else:
             metric_value = "N/A"
         
-        st.markdown("""
-        <div class="metric-card">
+        st.markdown(f"""
+        <div class="metric-card-minimal {card_styles[3]}">
+            <div class="icon">{icons[3]}</div>
             <h3>Excellent</h3>
-            <h1>{}</h1>
+            <h1>{metric_value}</h1>
+            <div class="subtext">ratings</div>
         </div>
-        """.format(metric_value), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         
     with col5:
         if 'issue_type_distribution' in stats:
             total_issues = sum(stats['issue_type_distribution'].values())
-            metric_value = total_issues
+            metric_value = f"{total_issues}"
         else:
             metric_value = "N/A"
         
-        st.markdown("""
-        <div class="metric-card">
+        st.markdown(f"""
+        <div class="metric-card-minimal {card_styles[4]}">
+            <div class="icon">{icons[4]}</div>
             <h3>Issues Found</h3>
-            <h1>{}</h1>
+            <h1>{metric_value}</h1>
+            <div class="subtext">identified</div>
         </div>
-        """.format(metric_value), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     # SPECIAL CASES SUMMARY
     if 'reply_effectiveness' in stats:
@@ -1212,4 +1231,3 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
-
