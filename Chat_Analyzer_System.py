@@ -683,16 +683,16 @@ class MainIssueDetector:
                 'not responding', 'bermasalah', 'gangguan', 'mogok', 'starter',
                 'rem blong', 'overheating', 'transmisi', 'kelistrikan', 'aki soak'
             ],
-            'complaint': [
-                'ulah montir', 'kompensasi', 'ganti rugi', 'komplain', 'kecewa', 'marah', 'protes', 'pengaduan', 'keluhan', 
-                'sakit hati', 'tidak puas', 'keberatan', 'sangat kecewa', 'refund',
-                'garansi ditolak', 'pelayanan buruk', 'tidak profesional'
-            ],
             'normal': [
                 'tanya', 'info', 'harga', 'berapa', 'cara', 'bagaimana', 'fungsi', 
                 'promo', 'spesifikasi', 'fitur', 'mau tanya', 'boleh tanya', 
                 'minta info', 'informasi', 'tanyakan', 'booking', 'test drive',
                 'alamat', 'lokasi', 'jam operasional', 'servis', 'sparepart'
+            ],
+            'complaint': [
+                'ulah montir', 'kompensasi', 'ganti rugi', 'komplain', 'kecewa', 'marah', 'protes', 'pengaduan', 'keluhan', 
+                'sakit hati', 'tidak puas', 'keberatan', 'sangat kecewa', 'refund',
+                'garansi ditolak', 'pelayanan buruk', 'tidak profesional'
             ]
         }
         
@@ -1317,7 +1317,7 @@ class ReplyAnalyzer:
     def __init__(self):
         # First reply indicators - IMPROVED: cari yang benar-benar meaningful first response
         self.first_reply_indicators = [
-            'tangkapan layar', 'jika dilihat', 'disarankan', 'kami cek', 'kami proses', 'akan kami', 'pengecekan', 'verifikasi', 
+            'jika dilihat dari tangkapan layar', 'jika dilihat', 'disarankan', 'kami cek', 'kami proses', 'akan kami', 'pengecekan', 'verifikasi', 
             'kami bantu', 'kami teruskan', 'kami diskusikan', 'cek dulu', 
             'proses dulu', 'tunggu sebentar', 'mohon ditunggu', 'akan kami proses',
             'mohon maaf', 'maaf', 'sangat disayangkan', 'kami turut prihatin',
@@ -3473,5 +3473,6 @@ print("   ✓ Complete Q-A Pairs Data")
 print("   ✓ Main Issue Scoring Details")
 print("   ✓ Reply Analysis Details")
 print("=" * 60)
+
 
 
