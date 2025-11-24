@@ -780,7 +780,7 @@ def display_ticket_details(result):
         else:
             st.metric("Status", "Not Found")
     
-    # Performance Metrics
+    # Performance Metrics - FIXED VERSION
     st.markdown("#### 📊 Performance Metrics")
     col1, col2, col3, col4 = st.columns(4)
     
@@ -792,10 +792,11 @@ def display_ticket_details(result):
             'poor': 'red'
         }.get(result['performance_rating'], 'gray')
         
+        # FIX: Gunakan delta="normal" untuk menghindari error delta_color
         st.metric(
             "Performance Rating", 
             result['performance_rating'].upper(),
-            delta=None,
+            delta="normal",  # Tambahkan delta value
             delta_color=performance_color
         )
     
@@ -804,7 +805,7 @@ def display_ticket_details(result):
         st.metric(
             "Quality Score", 
             f"{result['quality_score']}/6",
-            delta=None,
+            delta="normal",  # Tambahkan delta value
             delta_color=quality_color
         )
     
@@ -1473,6 +1474,7 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
 
 
 
