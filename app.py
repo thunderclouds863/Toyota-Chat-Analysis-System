@@ -39,58 +39,60 @@ st.markdown("""
         text-align: center;
         margin-bottom: 2rem;
     }
-    .metric-card-minimal {
-        background: white;
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 12px;
-        padding: 25px 20px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        padding: 25px 15px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
         margin: 8px;
         text-align: center;
-        border: 1px solid #f0f0f0;
-        transition: all 0.3s ease;
+        border: none;
+        color: white;
         position: relative;
+        overflow: hidden;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
 
-    .metric-card-minimal:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
     }
 
-    .metric-card-minimal h3 {
-        font-size: 0.8rem;
-        color: #6c757d;
-        margin: 0 0 10px 0;
+    .metric-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcf7f, #4d96ff);
+    }
+
+    .metric-card h3 {
+        font-size: 0.85rem;
+        color: rgba(255, 255, 255, 0.9);
+        margin: 0 0 12px 0;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.8px;
+        letter-spacing: 1px;
     }
 
-    .metric-card-minimal h1 {
-        font-size: 2.1rem;
-        color: #2c3e50;
+    .metric-card h1 {
+        font-size: 2.2rem;
+        color: white;
         margin: 0;
         font-weight: 700;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     }
 
-    .metric-card-minimal .icon {
-        font-size: 1.5rem;
-        margin-bottom: 10px;
-        opacity: 0.8;
-    }
-            
-    .metric-card-minimal .subtext {
+    .metric-card .trend {
         font-size: 0.75rem;
-        color: #6c757d;
-        margin-top: 5px;
-        font-weight: 500;
+        margin-top: 8px;
+        padding: 4px 8px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.2);
+        display: inline-block;
     }
-
-    /* Border colors untuk variasi */
-    .metric-card-minimal.primary { border-top: 4px solid #3498db; }
-    .metric-card-minimal.success { border-top: 4px solid #2ecc71; }
-    .metric-card-minimal.warning { border-top: 4px solid #f39c12; }
-    .metric-card-minimal.info { border-top: 4px solid #9b59b6; }
-    .metric-card-minimal.dark { border-top: 4px solid #34495e; }
     .success-box {
         background-color: #d4edda;
         border: 1px solid #c3e6cb;
@@ -390,76 +392,64 @@ def display_complete_results():
     # Quick Stats
     col1, col2, col3, col4, col5 = st.columns(5)
 
-    card_styles = ["primary", "success", "warning", "info", "dark"]
-    icons = ["📊", "✅", "⏱️", "⭐", "🔍"]
-
     with col1:
-        total_tickets = stats.get('total_tickets', 0)
-        st.markdown(f"""
-        <div class="metric-card-minimal {card_styles[0]}">
-            <div class="icon">{icons[0]}</div>
+        st.markdown("""
+        <div class="metric-card">
             <h3>Total Tickets</h3>
-            <h1>{total_tickets:,}</h1>
+            <h1>{}</h1>
         </div>
-        """, unsafe_allow_html=True)
+        """.format(stats.get('total_tickets', 0)), unsafe_allow_html=True)
 
     with col2:
         success_rate = stats.get('success_rate', 0) * 100
-        st.markdown(f"""
-        <div class="metric-card-minimal {card_styles[1]}">
-            <div class="icon">{icons[1]}</div>
+        st.markdown("""
+        <div class="metric-card">
             <h3>Success Rate</h3>
-            <h1>{success_rate:.1f}%</h1>
+            <h1>{:.1f}%</h1>
         </div>
-        """, unsafe_allow_html=True)
+        """.format(success_rate), unsafe_allow_html=True)
 
     with col3:
         if 'overall_lead_times' in stats:
             avg_lead_time = stats['overall_lead_times'].get('final_reply_avg_minutes', 0)
-            metric_value = f"{avg_lead_time:.1f}"
+            metric_value = f"{avg_lead_time:.1f} min"
         else:
             metric_value = "N/A"
         
-        st.markdown(f"""
-        <div class="metric-card-minimal {card_styles[2]}">
-            <div class="icon">{icons[2]}</div>
-            <h3>Avg Response</h3>
-            <h1>{metric_value}</h1>
-            <div class="subtext">minutes</div>
+        st.markdown("""
+        <div class="metric-card">
+            <h3>Avg Final Reply</h3>
+            <h1>{}</h1>
         </div>
-        """, unsafe_allow_html=True)
+        """.format(metric_value), unsafe_allow_html=True)
 
     with col4:
         if 'performance_distribution' in stats:
             excellent = stats['performance_distribution'].get('excellent', 0)
-            metric_value = f"{excellent}"
+            metric_value = excellent
         else:
             metric_value = "N/A"
         
-        st.markdown(f"""
-        <div class="metric-card-minimal {card_styles[3]}">
-            <div class="icon">{icons[3]}</div>
+        st.markdown("""
+        <div class="metric-card">
             <h3>Excellent</h3>
-            <h1>{metric_value}</h1>
-            <div class="subtext">ratings</div>
+            <h1>{}</h1>
         </div>
-        """, unsafe_allow_html=True)
+        """.format(metric_value), unsafe_allow_html=True)
         
     with col5:
         if 'issue_type_distribution' in stats:
             total_issues = sum(stats['issue_type_distribution'].values())
-            metric_value = f"{total_issues}"
+            metric_value = total_issues
         else:
             metric_value = "N/A"
         
-        st.markdown(f"""
-        <div class="metric-card-minimal {card_styles[4]}">
-            <div class="icon">{icons[4]}</div>
+        st.markdown("""
+        <div class="metric-card">
             <h3>Issues Found</h3>
-            <h1>{metric_value}</h1>
-            <div class="subtext">identified</div>
+            <h1>{}</h1>
         </div>
-        """, unsafe_allow_html=True)
+        """.format(metric_value), unsafe_allow_html=True)
 
     # SPECIAL CASES SUMMARY
     if 'reply_effectiveness' in stats:
