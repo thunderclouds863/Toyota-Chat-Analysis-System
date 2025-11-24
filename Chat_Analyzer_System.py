@@ -1333,6 +1333,38 @@ class ReplyAnalyzer:
         print(f"   ✅ Reply analysis completed - Special cases: {analysis_result['special_cases']}")
         return first_reply, final_reply, analysis_result
 
+        def _is_generic_reply(self, message):
+        """Skip generic/bot replies"""
+        message_lower = str(message).lower()
+        return any(pattern in message_lower for pattern in self.generic_reply_patterns)
+
+    def _matches_pattern(self, text, patterns):
+        """Check if text matches any of the regex patterns"""
+        if not text:
+            return False
+        text_lower = text.lower()
+        return any(re.search(pattern, text_lower) for pattern in patterns)
+
+    def _shows_action_not_solution(self, message):
+        """Cek apakah message menunjukkan action/tindakan BUKAN solusi final"""
+        message_lower = message.lower()
+        
+        action_patterns = [
+            r'tangkapan\s+layar', r'cek', r'proses', r'kami\s+lihat', r'kami\s+periksa', 
+            r'konfirmasi', r'validasi', r'follow\s+up', r'tindak\s+lanjut', r'eskalasi',
+            r'kami\s+pelajari', r'kami\s+investigasi', r'kami\s+telusuri', r'jika\s+dilihat'
+        ]
+        
+        solution_patterns = [
+            r'solusi', r'jawaban', r'caranya', r'prosedur', r'bisa\s+menghubungi',
+            r'silakan\s+menghubungi', r'disarankan\s+untuk', r'rekomendasi'
+        ]
+        
+        has_action = self._matches_pattern(message_lower, action_patterns)
+        has_solution = self._matches_pattern(message_lower, solution_patterns)
+        
+        return has_action and not has_solution
+        
     def _find_final_reply_priority_system(self, qa_pairs, issue_type, customer_leave, first_reply):
         """Cari final reply dengan PRIORITY SYSTEM: Solution → Escalation → Last Operator → First Reply"""
         candidates = []
@@ -3924,6 +3956,7 @@ if __name__ == "__main__":
     
     for ticket_id in problematic_tickets:
         debug_ticket_analysis(ticket_id, raw_df)
+
 
 
 
