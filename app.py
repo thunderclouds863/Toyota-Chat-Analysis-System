@@ -39,60 +39,6 @@ st.markdown("""
         text-align: center;
         margin-bottom: 2rem;
     }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 12px;
-        padding: 25px 15px;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-        margin: 8px;
-        text-align: center;
-        border: none;
-        color: white;
-        position: relative;
-        overflow: hidden;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }
-
-    .metric-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-    }
-
-    .metric-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcf7f, #4d96ff);
-    }
-
-    .metric-card h3 {
-        font-size: 0.85rem;
-        color: rgba(255, 255, 255, 0.9);
-        margin: 0 0 12px 0;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-
-    .metric-card h1 {
-        font-size: 2.2rem;
-        color: white;
-        margin: 0;
-        font-weight: 700;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    }
-
-    .metric-card .trend {
-        font-size: 0.75rem;
-        margin-top: 8px;
-        padding: 4px 8px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.2);
-        display: inline-block;
-    }
     .success-box {
         background-color: #d4edda;
         border: 1px solid #c3e6cb;
@@ -394,19 +340,15 @@ def display_complete_results():
 
     with col1:
         st.markdown("""
-        <div class="metric-card">
             <h3>Total Tickets</h3>
             <h1>{}</h1>
-        </div>
         """.format(stats.get('total_tickets', 0)), unsafe_allow_html=True)
 
     with col2:
         success_rate = stats.get('success_rate', 0) * 100
         st.markdown("""
-        <div class="metric-card">
             <h3>Success Rate</h3>
             <h1>{:.1f}%</h1>
-        </div>
         """.format(success_rate), unsafe_allow_html=True)
 
     with col3:
@@ -429,10 +371,8 @@ def display_complete_results():
             metric_value = "N/A"
         
         st.markdown("""
-        <div class="metric-card">
             <h3>Avg Final Reply</h3>
             <h1>{}</h1>
-        </div>
         """.format(metric_value), unsafe_allow_html=True)
         
     with col5:
@@ -443,10 +383,8 @@ def display_complete_results():
             metric_value = "N/A"
         
         st.markdown("""
-        <div class="metric-card">
             <h3>Issues Found</h3>
             <h1>{}</h1>
-        </div>
         """.format(metric_value), unsafe_allow_html=True)
 
     # SPECIAL CASES SUMMARY
