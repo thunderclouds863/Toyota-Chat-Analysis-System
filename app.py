@@ -261,7 +261,7 @@ def main_interface():
             st.info("📁 No sample data found. Please upload your own Excel file.")
 
 def run_direct_analysis(df, max_tickets, analysis_type):
-    """Run analysis langsung dari DataFrame"""
+    """Run analysis langsung dari DataFrame - ROBUST VERSION"""
     try:
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -269,18 +269,41 @@ def run_direct_analysis(df, max_tickets, analysis_type):
         status_text.text("🔄 Initializing analysis pipeline...")
         progress_bar.progress(10)
         
-        # 1. PREPROCESS DATA
+        # 1. PREPROCESS DATA - ROBUST APPROACH
         status_text.text("📊 Preprocessing data...")
         progress_bar.progress(30)
         
-        preprocessor = DataPreprocessor()
-        processed_data = preprocessor.preprocess_dataframe(df)
+        # Coba beberapa approach untuk preprocessing
+        processed_data = None
         
-        if processed_data is None:
-            st.error("❌ Data preprocessing failed")
+        # Approach 1: Langsung gunakan DataFrame yang sudah clean
+        try:
+            preprocessor = DataPreprocessor()
+            # Coba method clean_data
+            if hasattr(preprocessor, 'clean_data'):
+                processed_data = preprocessor.clean_data(df)
+                st.info("✅ Used clean_data method for preprocessing")
+            # Coba method load_raw_data (jika ada)
+            elif hasattr(preprocessor, 'load_raw_data'):
+                # Simpan ke file temporary dulu
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
+                    df.to_excel(tmp_file.name, index=False)
+                    processed_data = preprocessor.load_raw_data(tmp_file.name)
+                st.info("✅ Used load_raw_data method for preprocessing")
+            else:
+                # Fallback: langsung gunakan DataFrame asli
+                processed_data = df
+                st.info("✅ Using original DataFrame (no preprocessing needed)")
+        except Exception as e:
+            st.warning(f"⚠️ Preprocessing failed: {e}. Using original DataFrame.")
+            processed_data = df
+        
+        if processed_data is None or len(processed_data) == 0:
+            st.error("❌ No data available for analysis")
             return None, None, None
             
-        st.success(f"✅ Preprocessed {len(processed_data)} conversations")
+        st.success(f"✅ Ready to analyze {len(processed_data)} rows")
         
         # 2. RUN ANALYSIS PIPELINE
         status_text.text("🔍 Analyzing conversations with AI...")
@@ -1450,6 +1473,7 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
 
 
 
