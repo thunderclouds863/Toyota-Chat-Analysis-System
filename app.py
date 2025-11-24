@@ -1,4 +1,4 @@
-# app.py - FIXED Streamlit Dashboard dengan Lead Time per Issue Type
+# app.py - FIXED Streamlit Dashboard dengan Logic Baru
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -74,6 +74,13 @@ st.markdown("""
         color: white;
         margin: 20px 0;
     }
+    .special-case {
+        background-color: #e7f3ff;
+        border-left: 4px solid #007bff;
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -128,7 +135,7 @@ def main_interface():
         analysis_type = st.radio(
             "Analysis Type",
             ["Quick Analysis", "Comprehensive Analysis"],
-            help="Quick: Basic metrics, Comprehensive: Full analysis with ML"
+            help="Quick: Basic metrics, Comprehensive: Full analysis dengan ML"
         )
         
         st.markdown("---")
@@ -244,16 +251,25 @@ def run_analysis(uploaded_file, max_tickets, analysis_type):
         status_text.text("🔍 Analyzing conversations...")
         progress_bar.progress(30)
         
-        # Run analysis
-        pipeline = CompleteAnalysisPipeline()
-        results, stats = pipeline.analyze_all_tickets(df, max_tickets=max_tickets)
+        # Run analysis dengan error handling
+        try:
+            pipeline = CompleteAnalysisPipeline()
+            results, stats = pipeline.analyze_all_tickets(df, max_tickets=max_tickets)
+        except Exception as e:
+            st.error(f"❌ Analysis error: {str(e)}")
+            st.error("Please check your data format and try again.")
+            return None, None, None
         
         status_text.text("💾 Exporting results...")
         progress_bar.progress(70)
         
-        # Export results
-        exporter = ResultsExporter()
-        excel_path = exporter.export_comprehensive_results(results, stats)
+        # Export results dengan error handling
+        try:
+            exporter = ResultsExporter()
+            excel_path = exporter.export_comprehensive_results(results, stats)
+        except Exception as e:
+            st.warning(f"⚠️ Excel export had issues: {e}")
+            excel_path = None
         
         # Fallback jika export gagal
         if excel_path is None or not os.path.exists(excel_path):
@@ -271,7 +287,9 @@ def run_analysis(uploaded_file, max_tickets, analysis_type):
                             'final_reply_found': result['final_reply_found'],
                             'first_reply_lead_time_min': result.get('first_reply_lead_time_minutes'),
                             'final_reply_lead_time_min': result.get('final_reply_lead_time_minutes'),
-                            'performance_rating': result['performance_rating']
+                            'performance_rating': result['performance_rating'],
+                            'customer_leave': result.get('customer_leave', False),
+                            'follow_up_ticket': result.get('follow_up_ticket', '')
                         })
                 
                 df_export = pd.DataFrame(export_data)
@@ -312,13 +330,21 @@ def run_analysis(uploaded_file, max_tickets, analysis_type):
     finally:
         # Cleanup temporary file
         if os.path.exists(temp_path):
-            os.unlink(temp_path)
-
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            
 def display_complete_results():
     """Display COMPLETE analysis results dengan semua tab dan download"""
     
     results = st.session_state.analysis_results
     stats = st.session_state.analysis_stats
+    
+    # Validasi stats
+    if not stats:
+        st.error("❌ No analysis statistics available")
+        return
     
     st.markdown("---")
     st.markdown('<h1 class="main-header">📊 Analysis Results</h1>', unsafe_allow_html=True)
@@ -339,9 +365,9 @@ def display_complete_results():
     
     with col3:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        if 'lead_time_stats' in stats:
-            avg_lead_time = stats['lead_time_stats']['avg_lead_time_minutes']
-            st.metric("Avg Lead Time", f"{avg_lead_time:.1f} min")
+        if 'overall_lead_times' in stats:
+            avg_lead_time = stats['overall_lead_times'].get('final_reply_avg_minutes', 0)
+            st.metric("Avg Final Reply", f"{avg_lead_time:.1f} min")
         else:
             st.metric("Avg Lead Time", "N/A")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -364,7 +390,28 @@ def display_complete_results():
             st.metric("Issues Found", "N/A")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # DOWNLOAD SECTION - PALING PENTING!
+    # SPECIAL CASES SUMMARY
+    if 'reply_effectiveness' in stats:
+        eff = stats['reply_effectiveness']
+        if eff.get('customer_leave_cases', 0) > 0 or eff.get('follow_up_cases', 0) > 0:
+            st.markdown("---")
+            st.markdown("## 🚨 Special Cases Summary")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown('<div class="special-case">', unsafe_allow_html=True)
+                st.metric("Customer Leave Cases", eff.get('customer_leave_cases', 0))
+                st.caption("Conversations where customer left without response")
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown('<div class="special-case">', unsafe_allow_html=True)
+                st.metric("Follow-up Cases", eff.get('follow_up_cases', 0))
+                st.caption("Issues resolved in different tickets")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+    # DOWNLOAD SECTION
     st.markdown("---")
     st.markdown('<div class="download-section">', unsafe_allow_html=True)
     st.markdown("## 💾 Download Complete Analysis Results")
@@ -381,16 +428,20 @@ def display_complete_results():
             type="primary",
             use_container_width=True
         )
-        st.success("✅ Excel report contains ALL parsed data: Q-A pairs, main issues, reply analysis, timestamps, and detailed metrics!")
+        st.success("✅ Excel report contains ALL parsed data: Q-A pairs, main issues, reply analysis, timestamps, lead time summary, and detailed metrics!")
+        
+        # Show file info
+        file_size = os.path.getsize(st.session_state.excel_file_path) / (1024 * 1024)  # MB
+        st.info(f"📊 Report includes: Detailed analysis sheets with raw data ({file_size:.1f} MB)")
     else:
         st.error("❌ Excel file not available for download. Analysis may not have exported properly.")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # TABS - SEMUA FITUR ANALYSIS
+    # TABS
     st.markdown("---")
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📈 Overview", "🎯 Main Issues", "⏱️ Lead Times", "📊 Performance", "💬 Conversation Types", "📋 All Data"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "📈 Overview", "🎯 Main Issues", "⏱️ Lead Times", "📊 Performance", "💬 Special Cases", "📋 All Data", "🐛 Debug"
     ])
     
     with tab1:
@@ -406,10 +457,13 @@ def display_complete_results():
         display_performance_tab(results, stats)
     
     with tab5:
-        display_conversation_types_tab(results, stats)
+        display_special_cases_tab(results, stats)
     
     with tab6:
         display_raw_data_tab(results)
+
+    with tab7:
+        display_debug_tab(results, stats)
 
     # NEW ANALYSIS BUTTON
     st.markdown("---")
@@ -467,18 +521,34 @@ def display_overview_tab(results, stats):
     
     # Summary Statistics
     st.markdown("### 📊 Summary Statistics")
-    if 'lead_time_stats' in stats:
-        lt_stats = stats['lead_time_stats']
+    
+    # Lead Time Summary
+    if 'overall_lead_times' in stats:
+        lt_stats = stats['overall_lead_times']
+        st.markdown("#### ⏱️ Overall Lead Time Summary")
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Average Lead Time", f"{lt_stats['avg_lead_time_minutes']:.1f} min")
+            st.metric("First Reply Avg", f"{lt_stats['first_reply_avg_minutes']:.1f} min")
         with col2:
-            st.metric("Median Lead Time", f"{lt_stats['median_lead_time_minutes']:.1f} min")
+            st.metric("Final Reply Avg", f"{lt_stats['final_reply_avg_minutes']:.1f} min")
         with col3:
-            st.metric("Min Lead Time", f"{lt_stats['min_lead_time_minutes']:.1f} min")
+            st.metric("First Reply Samples", lt_stats['first_reply_samples'])
         with col4:
-            st.metric("Max Lead Time", f"{lt_stats['max_lead_time_minutes']:.1f} min")
+            st.metric("Final Reply Samples", lt_stats['final_reply_samples'])
+    
+    # Reply Effectiveness
+    if 'reply_effectiveness' in stats:
+        eff = stats['reply_effectiveness']
+        st.markdown("#### 💬 Reply Effectiveness")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("First Reply Found", f"{eff['first_reply_found_rate']*100:.1f}%")
+        with col2:
+            st.metric("Final Reply Found", f"{eff['final_reply_found_rate']*100:.1f}%")
+        with col3:
+            st.metric("Both Replies Found", f"{eff['both_replies_found_rate']*100:.1f}%")
 
 def display_main_issues_tab(results):
     """Display main issues dengan first/final reply details"""
@@ -510,6 +580,12 @@ def display_main_issues_tab(results):
         st.markdown("### 📋 All Main Issues")
         display_data = []
         for result in successful:
+            special_notes = []
+            if result.get('customer_leave'):
+                special_notes.append("🚶 Customer Leave")
+            if result.get('follow_up_ticket'):
+                special_notes.append("🔄 Follow-up")
+            
             display_data.append({
                 'Ticket ID': result['ticket_id'],
                 'Main Question': result['main_question'][:80] + '...' if len(result['main_question']) > 80 else result['main_question'],
@@ -519,7 +595,7 @@ def display_main_issues_tab(results):
                 'First Reply LT (min)': result.get('first_reply_lead_time_minutes', 'N/A'),
                 'Final Reply LT (min)': result.get('final_reply_lead_time_minutes', 'N/A'),
                 'Performance': result['performance_rating'].upper(),
-                'Quality Score': result['quality_score']
+                'Special Notes': ', '.join(special_notes) if special_notes else '-'
             })
         
         df_display = pd.DataFrame(display_data)
@@ -540,13 +616,27 @@ def display_main_issues_tab(results):
         st.info("No successful analyses to display")
 
 def display_ticket_details(result):
-    """Display detailed information for a single ticket"""
+    """Display detailed information for a single ticket - DIPERBAIKI"""
     # Main Question
     st.markdown("### 📝 Main Question")
     st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
     st.caption(f"Detected as: {result['final_issue_type'].upper()} (Confidence: {result['detection_confidence']:.2f})")
     
-    # First Reply Section
+    # Special Cases Notes - LOGIC BARU
+    special_notes = []
+    if result.get('customer_leave'):
+        special_notes.append("🚶 **Customer Leave**: Customer left conversation without response")
+    if result.get('follow_up_ticket'):
+        special_notes.append(f"🔄 **Follow-up**: Resolved in ticket {result['follow_up_ticket']}")
+    if result.get('customer_leave_note'):
+        special_notes.append(f"📝 **Note**: {result['customer_leave_note']}")
+    
+    if special_notes:
+        st.markdown("### 🚨 Special Conditions")
+        for note in special_notes:
+            st.markdown(f'<div class="special-case">{note}</div>', unsafe_allow_html=True)
+    
+    # First Reply Section - LOGIC BARU
     st.markdown("#### 🔄 First Reply Analysis")
     col1, col2 = st.columns([2, 1])
     
@@ -554,9 +644,15 @@ def display_ticket_details(result):
         if result['first_reply_found']:
             first_reply_msg = result.get('first_reply_message', 'No message content available')
             st.markdown(f'<div class="message-box"><strong>First Reply:</strong> {first_reply_msg}</div>', unsafe_allow_html=True)
+            
+            # Tampilkan note jika ada
+            if result.get('first_reply_note'):
+                st.info(f"Note: {result['first_reply_note']}")
         else:
-            st.error("❌ No first reply found")
-            st.markdown('<div class="message-box">First reply was not detected for this conversation.</div>', unsafe_allow_html=True)
+            if result['final_issue_type'] in ['serious', 'complaint']:
+                st.error("❌ No first reply found - REQUIRED for serious/complaint issues")
+            else:
+                st.info("ℹ️ No first reply found - Not required for normal issues")
     
     with col2:
         if result['first_reply_found']:
@@ -565,7 +661,7 @@ def display_ticket_details(result):
         else:
             st.metric("Status", "Not Found")
     
-    # Final Reply Section  
+    # Final Reply Section - LOGIC BARU  
     st.markdown("#### ✅ Final Reply Analysis")
     col1, col2 = st.columns([2, 1])
     
@@ -573,9 +669,17 @@ def display_ticket_details(result):
         if result['final_reply_found']:
             final_reply_msg = result.get('final_reply_message', 'No message content available')
             st.markdown(f'<div class="message-box"><strong>Final Reply:</strong> {final_reply_msg}</div>', unsafe_allow_html=True)
+            
+            # Tampilkan note khusus
+            if result.get('customer_leave_note'):
+                st.warning(result['customer_leave_note'])
+            elif result.get('final_reply_note'):
+                st.info(f"Note: {result['final_reply_note']}")
         else:
-            st.error("❌ No final reply found")
-            st.markdown('<div class="message-box">Final reply was not detected for this conversation.</div>', unsafe_allow_html=True)
+            if result['final_issue_type'] == 'normal' and not result.get('customer_leave'):
+                st.error("❌ No final reply found - REQUIRED for normal issues")
+            else:
+                st.info("ℹ️ No final reply found - May be handled in follow-up")
     
     with col2:
         if result['final_reply_found']:
@@ -584,43 +688,25 @@ def display_ticket_details(result):
         else:
             st.metric("Status", "Not Found")
     
-    # All Q-A Pairs (Raw parsing results)
-    if '_raw_qa_pairs' in result:
-        st.markdown("### 📋 All Question-Answer Pairs")
-        qa_pairs = result['_raw_qa_pairs']
-        st.info(f"Found {len(qa_pairs)} Q-A pairs in this conversation")
-        
-        for i, qa_pair in enumerate(qa_pairs):
-            with st.expander(f"Q-A Pair {i+1} - {'✅ Answered' if qa_pair['is_answered'] else '❌ Unanswered'}"):
-                col_q, col_a = st.columns(2)
-                
-                with col_q:
-                    st.markdown("**Question:**")
-                    st.markdown(f'<div class="message-box">{qa_pair["question"]}</div>', unsafe_allow_html=True)
-                    st.caption(f"Time: {qa_pair.get('question_time', 'N/A')}")
-                    st.caption(f"Bubbles: {qa_pair.get('bubble_count', 1)}")
-                
-                with col_a:
-                    if qa_pair['is_answered']:
-                        st.markdown("**Answer:**")
-                        st.markdown(f'<div class="message-box">{qa_pair["answer"]}</div>', unsafe_allow_html=True)
-                        st.caption(f"Time: {qa_pair.get('answer_time', 'N/A')}")
-                        st.caption(f"Role: {qa_pair.get('answer_role', 'N/A')}")
-                        st.caption(f"Lead Time: {qa_pair.get('lead_time_minutes', 'N/A')} min")
-                    else:
-                        st.warning("No answer found")
+    # Requirement Compliance - LOGIC BARU
+    st.markdown("#### 📋 Requirement Compliance")
+    col1, col2, col3 = st.columns(3)
     
-    # Performance Metrics
-    st.markdown("### 📊 Performance Summary")
-    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Performance", result['performance_rating'].upper())
+        if result['requirement_compliant']:
+            st.success("✅ Requirements Met")
+        else:
+            st.warning("⚠️ Requirements Partially Met")
+    
     with col2:
-        st.metric("Quality Score", f"{result['quality_score']}/6")
+        st.metric("First Reply", "✅" if result['first_reply_found'] else "❌")
+    
     with col3:
-        st.metric("Issue Type", result['final_issue_type'].upper())
-    with col4:
-        st.metric("Total Messages", result['total_messages'])
+        st.metric("Final Reply", "✅" if result['final_reply_found'] else "❌")
+    
+    # Recommendation
+    if result.get('recommendation'):
+        st.info(f"💡 **Recommendation**: {result['recommendation']}")
 
 def display_lead_time_tab(results, stats):
     """Display lead time analysis dengan breakdown per issue type"""
@@ -628,148 +714,156 @@ def display_lead_time_tab(results, stats):
     
     successful = [r for r in results if r['status'] == 'success']
     
-    # Calculate lead times per issue type
-    issue_type_lead_times = {}
+    # Overall Lead Time Summary
+    if 'overall_lead_times' in stats:
+        overall_lt = stats['overall_lead_times']
+        st.markdown("### 📊 Overall Lead Time Summary")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("First Reply Average", f"{overall_lt['first_reply_avg_minutes']:.1f} min")
+        with col2:
+            st.metric("Final Reply Average", f"{overall_lt['final_reply_avg_minutes']:.1f} min")
+        with col3:
+            st.metric("First Reply Median", f"{overall_lt['first_reply_median_minutes']:.1f} min")
+        with col4:
+            st.metric("Samples", f"{overall_lt['first_reply_samples']} / {overall_lt['final_reply_samples']}")
     
-    for result in successful:
-        issue_type = result['final_issue_type']
-        first_lt = result.get('first_reply_lead_time_minutes')
-        final_lt = result.get('final_reply_lead_time_minutes')
+    # Lead Time by Issue Type
+    if 'issue_type_lead_times' in stats:
+        st.markdown("### 📈 Lead Time by Issue Type")
         
-        if issue_type not in issue_type_lead_times:
-            issue_type_lead_times[issue_type] = {
-                'first_reply_times': [],
-                'final_reply_times': []
-            }
+        # Define the desired order
+        desired_order = ['normal', 'serious', 'complaint']
         
-        if first_lt is not None:
-            issue_type_lead_times[issue_type]['first_reply_times'].append(first_lt)
-        if final_lt is not None:
-            issue_type_lead_times[issue_type]['final_reply_times'].append(final_lt)
-    
-    # Display average lead times per issue type
-    st.markdown("### 📊 Average Lead Times by Issue Type")
-    
-    if issue_type_lead_times:
-        # Create summary table
-        summary_data = []
-        for issue_type, times in issue_type_lead_times.items():
-            first_avg = np.mean(times['first_reply_times']) if times['first_reply_times'] else None
-            final_avg = np.mean(times['final_reply_times']) if times['final_reply_times'] else None
-            first_count = len(times['first_reply_times'])
-            final_count = len(times['final_reply_times'])
+        issue_type_data = []
+        for issue_type in desired_order:
+            if issue_type in stats['issue_type_lead_times']:
+                lt_stats = stats['issue_type_lead_times'][issue_type]
+                first_avg = lt_stats.get('first_reply_avg_minutes')
+                final_avg = lt_stats.get('final_reply_avg_minutes')
+                
+                if first_avg is not None or final_avg is not None:
+                    issue_type_data.append({
+                        'Issue Type': issue_type.upper(),
+                        'First Reply Avg (min)': f"{first_avg:.1f}" if first_avg is not None else "N/A",
+                        'Final Reply Avg (min)': f"{final_avg:.1f}" if final_avg is not None else "N/A",
+                        'First Reply Samples': lt_stats['first_reply_samples'],
+                        'Final Reply Samples': lt_stats['final_reply_samples']
+                    })
+        
+        if issue_type_data:
+            df_issue_lt = pd.DataFrame(issue_type_data)
+            st.dataframe(df_issue_lt, use_container_width=True)
             
-            summary_data.append({
-                'Issue Type': issue_type.upper(),
-                'First Reply Avg (min)': f"{first_avg:.1f}" if first_avg is not None else "N/A",
-                'Final Reply Avg (min)': f"{final_avg:.1f}" if final_avg is not None else "N/A",
-                'First Reply Samples': first_count,
-                'Final Reply Samples': final_count
-            })
-        
-        df_summary = pd.DataFrame(summary_data)
-        st.dataframe(df_summary, use_container_width=True)
-        
-        # Visual comparison
-        st.markdown("### 📈 Lead Time Comparison by Issue Type")
-        
-        viz_data = []
-        for issue_type, times in issue_type_lead_times.items():
-            first_avg = np.mean(times['first_reply_times']) if times['first_reply_times'] else None
-            final_avg = np.mean(times['final_reply_times']) if times['final_reply_times'] else None
+            # Visualization
+            st.markdown("### 📊 Lead Time Comparison by Issue Type")
             
-            if first_avg is not None:
-                viz_data.append({
-                    'Issue Type': issue_type.upper(),
-                    'Lead Time Type': 'First Reply',
-                    'Average Lead Time (min)': first_avg,
-                    'Samples': len(times['first_reply_times'])
-                })
-            if final_avg is not None:
-                viz_data.append({
-                    'Issue Type': issue_type.upper(),
-                    'Lead Time Type': 'Final Reply',
-                    'Average Lead Time (min)': final_avg,
-                    'Samples': len(times['final_reply_times'])
-                })
-        
-        if viz_data:
-            df_viz = pd.DataFrame(viz_data)
-            fig = px.bar(
-                df_viz, 
-                x='Issue Type', 
-                y='Average Lead Time (min)', 
-                color='Lead Time Type',
-                title='Average Lead Time by Issue Type and Reply Type',
-                barmode='group',
-                labels={'Average Lead Time (min)': 'Average Lead Time (minutes)'},
-                color_discrete_map={
-                    'First Reply': '#2E86AB',
-                    'Final Reply': '#A23B72'
-                }
-            )
+            # Prepare data for visualization - also maintain the same order
+            viz_data = []
+            for issue_type in desired_order:
+                if issue_type in stats['issue_type_lead_times']:
+                    lt_stats = stats['issue_type_lead_times'][issue_type]
+                    first_avg = lt_stats.get('first_reply_avg_minutes')
+                    final_avg = lt_stats.get('final_reply_avg_minutes')
+                    
+                    if first_avg is not None:
+                        viz_data.append({
+                            'Issue Type': issue_type.upper(),
+                            'Lead Time Type': 'First Reply',
+                            'Average Lead Time (min)': first_avg,
+                            'Samples': lt_stats['first_reply_samples']
+                        })
+                    if final_avg is not None:
+                        viz_data.append({
+                            'Issue Type': issue_type.upper(),
+                            'Lead Time Type': 'Final Reply',
+                            'Average Lead Time (min)': final_avg,
+                            'Samples': lt_stats['final_reply_samples']
+                        })
             
-            # Add sample size annotations
-            for i, row in df_viz.iterrows():
-                fig.add_annotation(
-                    x=row['Issue Type'],
-                    y=row['Average Lead Time (min)'],
-                    text=f"n={row['Samples']}",
-                    showarrow=False,
-                    yshift=10,
-                    font=dict(size=10)
+            if viz_data:
+                df_viz = pd.DataFrame(viz_data)
+                
+                # Ensure the x-axis order in the chart
+                fig = px.bar(
+                    df_viz, 
+                    x='Issue Type', 
+                    y='Average Lead Time (min)', 
+                    color='Lead Time Type',
+                    title='Average Lead Time by Issue Type and Reply Type',
+                    barmode='group',
+                    labels={'Average Lead Time (min)': 'Average Lead Time (minutes)'},
+                    color_discrete_map={
+                        'First Reply': '#2E86AB',
+                        'Final Reply': '#A23B72'
+                    },
+                    category_orders={"Issue Type": [t.upper() for t in desired_order]}  # This ensures the order in the chart
                 )
-            
-            st.plotly_chart(fig, use_container_width=True)
+                
+                # Add sample size annotations
+                for i, row in df_viz.iterrows():
+                    fig.add_annotation(
+                        x=row['Issue Type'],
+                        y=row['Average Lead Time (min)'],
+                        text=f"n={row['Samples']}",
+                        showarrow=False,
+                        yshift=10,
+                        font=dict(size=10)
+                    )
+                
+                st.plotly_chart(fig, use_container_width=True)
+    
+    # Detailed Lead Time Distribution
+    st.markdown("### 📊 Detailed Lead Time Distribution")
+    
+    successful_with_lead_times = [r for r in successful if r.get('final_reply_lead_time_minutes') is not None]
+    
+    if successful_with_lead_times:
+        lead_times = [r['final_reply_lead_time_minutes'] for r in successful_with_lead_times]
         
-        # Distribution charts per issue type
-        st.markdown("### 📊 Lead Time Distribution by Issue Type")
+        col1, col2 = st.columns(2)
         
-        for issue_type, times in issue_type_lead_times.items():
-            if times['first_reply_times'] or times['final_reply_times']:
-                st.markdown(f"#### {issue_type.upper()} Issues")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if times['first_reply_times']:
-                        fig_first = px.histogram(
-                            x=times['first_reply_times'],
-                            title=f'{issue_type.upper()} - First Reply Lead Time Distribution',
-                            labels={'x': 'Lead Time (minutes)', 'y': 'Frequency'},
-                            nbins=15,
-                            color_discrete_sequence=['#2E86AB']
-                        )
-                        fig_first.add_vline(
-                            x=np.mean(times['first_reply_times']), 
-                            line_dash="dash", 
-                            line_color="red",
-                            annotation_text=f"Mean: {np.mean(times['first_reply_times']):.1f} min"
-                        )
-                        st.plotly_chart(fig_first, use_container_width=True)
-                    else:
-                        st.info(f"No first reply data for {issue_type} issues")
-                
-                with col2:
-                    if times['final_reply_times']:
-                        fig_final = px.histogram(
-                            x=times['final_reply_times'],
-                            title=f'{issue_type.upper()} - Final Reply Lead Time Distribution',
-                            labels={'x': 'Lead Time (minutes)', 'y': 'Frequency'},
-                            nbins=15,
-                            color_discrete_sequence=['#A23B72']
-                        )
-                        fig_final.add_vline(
-                            x=np.mean(times['final_reply_times']), 
-                            line_dash="dash", 
-                            line_color="red",
-                            annotation_text=f"Mean: {np.mean(times['final_reply_times']):.1f} min"
-                        )
-                        st.plotly_chart(fig_final, use_container_width=True)
-                    else:
-                        st.info(f"No final reply data for {issue_type} issues")
+        with col1:
+            # Histogram
+            fig_hist = px.histogram(
+                x=lead_times,
+                title='Final Reply Lead Time Distribution',
+                labels={'x': 'Lead Time (minutes)', 'y': 'Frequency'},
+                nbins=20,
+                color_discrete_sequence=['#2E86AB']
+            )
+            fig_hist.add_vline(
+                x=np.mean(lead_times), 
+                line_dash="dash", 
+                line_color="red",
+                annotation_text=f"Mean: {np.mean(lead_times):.1f} min"
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+        
+        with col2:
+            # Box plot
+            fig_box = px.box(
+                x=lead_times,
+                title='Final Reply Lead Time Distribution',
+                labels={'x': 'Lead Time (minutes)'},
+                color_discrete_sequence=['#A23B72']
+            )
+            st.plotly_chart(fig_box, use_container_width=True)
+        
+        # Statistics
+        st.markdown("#### 📈 Lead Time Statistics")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Mean", f"{np.mean(lead_times):.1f} min")
+        with col2:
+            st.metric("Median", f"{np.median(lead_times):.1f} min")
+        with col3:
+            st.metric("Std Dev", f"{np.std(lead_times):.1f} min")
+        with col4:
+            st.metric("Range", f"{np.min(lead_times):.1f} - {np.max(lead_times):.1f} min")
     else:
-        st.info("No lead time data available for analysis")
+        st.info("No lead time data available for detailed analysis")
 
 def display_performance_tab(results, stats):
     """Display performance analysis"""
@@ -824,6 +918,12 @@ def display_performance_tab(results, stats):
         st.markdown("### 📈 Detailed Performance Metrics")
         perf_metrics = []
         for result in successful:
+            special_notes = []
+            if result.get('customer_leave'):
+                special_notes.append("Customer Leave")
+            if result.get('follow_up_ticket'):
+                special_notes.append("Follow-up")
+            
             perf_metrics.append({
                 'Ticket ID': result['ticket_id'],
                 'Issue Type': result['final_issue_type'],
@@ -832,75 +932,94 @@ def display_performance_tab(results, stats):
                 'First Reply LT': result.get('first_reply_lead_time_minutes', 'N/A'),
                 'Final Reply LT': result.get('final_reply_lead_time_minutes', 'N/A'),
                 'First Reply': '✅' if result['first_reply_found'] else '❌',
-                'Final Reply': '✅' if result['final_reply_found'] else '❌'
+                'Final Reply': '✅' if result['final_reply_found'] else '❌',
+                'Special Notes': ', '.join(special_notes) if special_notes else '-'
             })
         
         df_perf_metrics = pd.DataFrame(perf_metrics)
         st.dataframe(df_perf_metrics, use_container_width=True)
 
-def display_conversation_types_tab(results, stats):
-    """Display conversation type analysis"""
-    st.markdown("## 💬 Conversation Type Analysis")
+def display_special_cases_tab(results, stats):
+    """Display special cases analysis (customer leave & follow-up)"""
+    st.markdown("## 🚨 Special Cases Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
     
-    if successful:
-        # Calculate conversation types based on reply patterns
-        conversation_types = []
-        for result in successful:
-            if not result['first_reply_found'] and not result['final_reply_found']:
-                conv_type = 'no_reply'
-            elif result['first_reply_found'] and not result['final_reply_found']:
-                conv_type = 'abandoned'
-            elif not result['first_reply_found'] and result['final_reply_found']:
-                conv_type = 'direct_final'
-            else:
-                conv_type = 'complete'
+    # Customer Leave Cases
+    customer_leave_cases = [r for r in successful if r.get('customer_leave')]
+    follow_up_cases = [r for r in successful if r.get('follow_up_ticket')]
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🚶 Customer Leave Cases")
+        if customer_leave_cases:
+            st.info(f"Found {len(customer_leave_cases)} conversations where customer left without response")
             
-            conversation_types.append(conv_type)
-        
-        if conversation_types:
-            conv_counts = pd.Series(conversation_types).value_counts()
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Conversation Type Distribution
-                fig_conv = px.pie(
-                    values=conv_counts.values, 
-                    names=conv_counts.index,
-                    title='Conversation Type Distribution',
-                    color_discrete_sequence=px.colors.qualitative.Pastel
-                )
-                st.plotly_chart(fig_conv, use_container_width=True)
-            
-            with col2:
-                # Conversation Type Bar Chart
-                fig_conv_bar = px.bar(
-                    x=conv_counts.index, 
-                    y=conv_counts.values,
-                    title='Conversation Types',
-                    labels={'x': 'Conversation Type', 'y': 'Count'},
-                    color=conv_counts.index,
-                    color_discrete_sequence=px.colors.qualitative.Set2
-                )
-                st.plotly_chart(fig_conv_bar, use_container_width=True)
-            
-            # Conversation type details
-            st.markdown("### 🔍 Conversation Type Details")
-            conv_data = []
-            for result, conv_type in zip(successful, conversation_types):
-                conv_data.append({
+            leave_data = []
+            for result in customer_leave_cases:
+                leave_data.append({
                     'Ticket ID': result['ticket_id'],
-                    'Conversation Type': conv_type.replace('_', ' ').title(),
-                    'First Reply': '✅' if result['first_reply_found'] else '❌',
-                    'Final Reply': '✅' if result['final_reply_found'] else '❌',
-                    'Performance': result['performance_rating'].upper(),
-                    'Main Question': result['main_question'][:60] + '...' if len(result['main_question']) > 60 else result['main_question']
+                    'Issue Type': result['final_issue_type'],
+                    'Main Question': result['main_question'][:80] + '...',
+                    'Final Reply Used': '✅' if result['final_reply_found'] else '❌',
+                    'Performance': result['performance_rating'].upper()
                 })
             
-            df_conv = pd.DataFrame(conv_data)
-            st.dataframe(df_conv, use_container_width=True)
+            df_leave = pd.DataFrame(leave_data)
+            st.dataframe(df_leave, use_container_width=True)
+        else:
+            st.success("✅ No customer leave cases detected")
+    
+    with col2:
+        st.markdown("### 🔄 Follow-up Cases")
+        if follow_up_cases:
+            st.info(f"Found {len(follow_up_cases)} issues resolved in different tickets")
+            
+            follow_up_data = []
+            for result in follow_up_cases:
+                follow_up_data.append({
+                    'Original Ticket': result['ticket_id'],
+                    'Follow-up Ticket': result['follow_up_ticket'],
+                    'Issue Type': result['final_issue_type'],
+                    'Main Question': result['main_question'][:80] + '...',
+                    'Performance': result['performance_rating'].upper()
+                })
+            
+            df_follow_up = pd.DataFrame(follow_up_data)
+            st.dataframe(df_follow_up, use_container_width=True)
+        else:
+            st.success("✅ No follow-up cases detected")
+    
+    # Analysis of special cases impact
+    if customer_leave_cases or follow_up_cases:
+        st.markdown("### 📊 Impact Analysis")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if customer_leave_cases:
+                # Performance distribution for customer leave cases
+                perf_counts = pd.Series([r['performance_rating'] for r in customer_leave_cases]).value_counts()
+                fig_leave_perf = px.pie(
+                    values=perf_counts.values,
+                    names=perf_counts.index,
+                    title='Performance Distribution - Customer Leave Cases',
+                    color_discrete_sequence=px.colors.qualitative.Pastel
+                )
+                st.plotly_chart(fig_leave_perf, use_container_width=True)
+        
+        with col2:
+            if follow_up_cases:
+                # Issue type distribution for follow-up cases
+                issue_counts = pd.Series([r['final_issue_type'] for r in follow_up_cases]).value_counts()
+                fig_follow_up_issues = px.pie(
+                    values=issue_counts.values,
+                    names=issue_counts.index,
+                    title='Issue Type Distribution - Follow-up Cases',
+                    color_discrete_sequence=px.colors.qualitative.Set3
+                )
+                st.plotly_chart(fig_follow_up_issues, use_container_width=True)
 
 def display_raw_data_tab(results):
     """Display raw data tab untuk melihat semua hasil parse"""
@@ -914,6 +1033,12 @@ def display_raw_data_tab(results):
         # Tampilkan data lengkap
         raw_data = []
         for result in successful:
+            special_notes = []
+            if result.get('customer_leave'):
+                special_notes.append("Customer Leave")
+            if result.get('follow_up_ticket'):
+                special_notes.append("Follow-up")
+            
             raw_data.append({
                 'Ticket ID': result['ticket_id'],
                 'Main Question': result['main_question'],
@@ -929,6 +1054,7 @@ def display_raw_data_tab(results):
                 'Final Reply LT (min)': result.get('final_reply_lead_time_minutes'),
                 'Performance': result['performance_rating'],
                 'Quality Score': result['quality_score'],
+                'Special Notes': ', '.join(special_notes) if special_notes else 'None',
                 'Total Messages': result['total_messages'],
                 'Total QA Pairs': result['total_qa_pairs']
             })
@@ -954,6 +1080,69 @@ def display_raw_data_tab(results):
     else:
         st.info("No successful analyses to display")
 
+def display_debug_tab(results, stats):
+    """Display debug information"""
+    st.markdown("## 🐛 Debug Information")
+    
+    successful = [r for r in results if r['status'] == 'success']
+    failed = [r for r in results if r['status'] == 'failed']
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 📊 Analysis Status")
+        st.metric("Successful Analyses", len(successful))
+        st.metric("Failed Analyses", len(failed))
+        st.metric("Success Rate", f"{(len(successful)/len(results))*100:.1f}%" if results else "0%")
+    
+    with col2:
+        st.markdown("### ⚠️ Common Issues")
+        
+        # Check for negative lead times
+        negative_lead_times = []
+        for result in successful:
+            first_lt = result.get('first_reply_lead_time_minutes')
+            final_lt = result.get('final_reply_lead_time_minutes')
+            
+            if (first_lt is not None and first_lt < 0) or (final_lt is not None and final_lt < 0):
+                negative_lead_times.append(result['ticket_id'])
+        
+        if negative_lead_times:
+            st.error(f"❌ {len(negative_lead_times)} tickets with negative lead times")
+        else:
+            st.success("✅ No negative lead times detected")
+        
+        # Check for missing required replies
+        missing_required = []
+        for result in successful:
+            issue_type = result['final_issue_type']
+            if issue_type in ['serious', 'complaint'] and not result['first_reply_found']:
+                missing_required.append(result['ticket_id'])
+            elif issue_type == 'normal' and not result['final_reply_found'] and not result.get('customer_leave'):
+                missing_required.append(result['ticket_id'])
+        
+        if missing_required:
+            st.warning(f"⚠️ {len(missing_required)} tickets missing required replies")
+        else:
+            st.success("✅ All required replies present")
+    
+    # Show failed analyses
+    if failed:
+        st.markdown("### ❌ Failed Analyses")
+        for result in failed[:5]:  # Show first 5 failures
+            with st.expander(f"Failed: {result['ticket_id']}"):
+                st.write(f"Reason: {result['failure_reason']}")
+    
+    # System information
+    st.markdown("### 🔧 System Information")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Python Version", sys.version.split()[0])
+    with col2:
+        st.metric("Pandas Version", pd.__version__)
+    with col3:
+        st.metric("Analysis Time", f"{stats.get('analysis_duration_seconds', 0):.1f}s")
+
 # Main execution
 if __name__ == "__main__":
     if not ANALYSIS_AVAILABLE:
@@ -972,140 +1161,3 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
-
-# ===== DEBUG FUNCTIONS UNTUK STREAMLIT =====
-def debug_timestamp_issues(results):
-    """Debug function untuk investigasi timestamp issues"""
-    st.markdown("---")
-    st.markdown("## 🐛 Debug Timestamp Issues")
-    
-    problematic_tickets = []
-    
-    for result in results:
-        if result['status'] == 'success':
-            first_lt = result.get('first_reply_lead_time_minutes')
-            final_lt = result.get('final_reply_lead_time_minutes')
-            
-            # Cari tickets dengan lead time negatif
-            if (first_lt is not None and first_lt < 0) or (final_lt is not None and final_lt < 0):
-                problematic_tickets.append({
-                    'ticket_id': result['ticket_id'],
-                    'main_question': result['main_question'][:50] + '...',
-                    'main_question_time': result.get('main_question_time'),
-                    'first_reply_time': result.get('first_reply_time'),
-                    'final_reply_time': result.get('final_reply_time'),
-                    'first_lead_time': first_lt,
-                    'final_lead_time': final_lt
-                })
-    
-    if problematic_tickets:
-        st.error(f"❌ Found {len(problematic_tickets)} tickets with negative lead times")
-        df_problems = pd.DataFrame(problematic_tickets)
-        st.dataframe(df_problems, use_container_width=True)
-        
-        # Show raw data untuk ticket pertama yang problematic
-        if problematic_tickets:
-            st.markdown("### 🔍 Raw Data for Problematic Ticket")
-            ticket_id = problematic_tickets[0]['ticket_id']
-            problematic_result = next((r for r in results if r['ticket_id'] == ticket_id), None)
-            
-            if problematic_result and '_raw_qa_pairs' in problematic_result:
-                st.write("**All Q-A Pairs:**")
-                for i, qa_pair in enumerate(problematic_result['_raw_qa_pairs']):
-                    st.write(f"**Pair {i+1}:**")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write(f"Q: {qa_pair.get('question', 'N/A')}")
-                        st.write(f"Q Time: {qa_pair.get('question_time', 'N/A')}")
-                    with col2:
-                        if qa_pair.get('is_answered'):
-                            st.write(f"A: {qa_pair.get('answer', 'N/A')}")
-                            st.write(f"A Time: {qa_pair.get('answer_time', 'N/A')}")
-                            st.write(f"Lead Time: {qa_pair.get('lead_time_minutes', 'N/A')} min")
-    else:
-        st.success("✅ No timestamp issues found")
-
-def debug_message_sequence(results):
-    """Debug function untuk melihat urutan message sebenarnya"""
-    st.markdown("## 🔍 Debug Message Sequence")
-    
-    successful = [r for r in results if r['status'] == 'success']
-    
-    if successful:
-        ticket_options = [f"{r['ticket_id']} - {r['main_question'][:50]}..." for r in successful]
-        selected_ticket = st.selectbox("Select ticket to debug sequence:", ticket_options, key="debug_sequence")
-        
-        if selected_ticket:
-            ticket_id = selected_ticket.split(' - ')[0]
-            selected_result = next((r for r in successful if r['ticket_id'] == ticket_id), None)
-            
-            if selected_result and '_raw_qa_pairs' in selected_result:
-                # Tampilkan Q-A pairs dengan urutan asli
-                st.markdown("### 📋 Q-A Pairs (Current Order)")
-                qa_pairs = selected_result['_raw_qa_pairs']
-                
-                for i, qa_pair in enumerate(qa_pairs):
-                    with st.expander(f"Q-A Pair {i+1} - Position {qa_pair.get('position', 'N/A')} - {'✅ Answered' if qa_pair['is_answered'] else '❌ Unanswered'}"):
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.markdown("**Question:**")
-                            st.markdown(f'<div class="message-box">{qa_pair["question"]}</div>', unsafe_allow_html=True)
-                            question_time = qa_pair.get('question_time')
-                            if question_time:
-                                st.caption(f"🕒 **Time:** {question_time}")
-                        
-                        with col2:
-                            if qa_pair['is_answered']:
-                                st.markdown("**Answer:**")
-                                st.markdown(f'<div class="message-box">{qa_pair["answer"]}</div>', unsafe_allow_html=True)
-                                answer_time = qa_pair.get('answer_time')
-                                if answer_time:
-                                    st.caption(f"🕒 **Time:** {answer_time}")
-                                st.caption(f"⏱️ **Lead Time:** {qa_pair.get('lead_time_minutes', 'N/A')} min")
-                            else:
-                                st.warning("No answer found")
-                
-                # Tampilkan urutan yang seharusnya (sorted by time)
-                st.markdown("### 🔄 Correct Chronological Order")
-                sorted_qa_pairs = sorted(qa_pairs, key=lambda x: x.get('question_time') if x.get('question_time') else pd.Timestamp.min)
-                
-                for i, qa_pair in enumerate(sorted_qa_pairs):
-                    with st.expander(f"Chronological {i+1} - Original Position {qa_pair.get('position', 'N/A')} - {'✅ Answered' if qa_pair['is_answered'] else '❌ Unanswered'}"):
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.markdown("**Question:**")
-                            st.markdown(f'<div class="message-box">{qa_pair["question"]}</div>', unsafe_allow_html=True)
-                            question_time = qa_pair.get('question_time')
-                            if question_time:
-                                st.caption(f"🕒 **Time:** {question_time}")
-                        
-                        with col2:
-                            if qa_pair['is_answered']:
-                                st.markdown("**Answer:**")
-                                st.markdown(f'<div class="message-box">{qa_pair["answer"]}</div>', unsafe_allow_html=True)
-                                answer_time = qa_pair.get('answer_time')
-                                if answer_time:
-                                    st.caption(f"🕒 **Time:** {answer_time}")
-                                st.caption(f"⏱️ **Lead Time:** {qa_pair.get('lead_time_minutes', 'N/A')} min")
-                            else:
-                                st.warning("No answer found")
-                
-                # Summary
-                st.markdown("### 📊 Sequence Analysis")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.metric("Total Q-A Pairs", len(qa_pairs))
-                    st.metric("Answered Pairs", sum(1 for p in qa_pairs if p['is_answered']))
-                
-                with col2:
-                    # Check if sequence is correct
-                    positions = [p.get('position', 0) for p in qa_pairs]
-                    is_sorted = positions == sorted(positions)
-                    st.metric("Sequence Correct", "✅" if is_sorted else "❌")
-                    
-                    times = [p.get('question_time') for p in qa_pairs if p.get('question_time')]
-                    time_sorted = times == sorted(times) if len(times) > 1 else True
-                    st.metric("Time Sorted", "✅" if time_sorted else "❌")
