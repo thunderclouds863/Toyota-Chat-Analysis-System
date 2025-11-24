@@ -1336,7 +1336,7 @@ class ReplyAnalyzer:
             'lead_times': lead_times,
             'customer_leave': customer_leave,
             'escalation_case': escalation_reply is not None,
-            'reply_validation': self.__validate_replies_simple(first_reply, final_reply, main_issue_type, customer_leave),
+            'reply_validation': self._validate_replies_simple(first_reply, final_reply, main_issue_type, customer_leave),
             'requirement_compliant': is_valid
         }
         
@@ -3782,6 +3782,7 @@ def debug_ticket_analysis(ticket_id, df):
             print(f"   First Reply Found: {analysis['reply_validation']['first_reply_found']}")
             print(f"   Final Reply Found: {analysis['reply_validation']['final_reply_found']}")
             print(f"   Requirement Compliant: {analysis['requirement_compliant']}")
+
 
 
 
