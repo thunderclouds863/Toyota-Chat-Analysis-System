@@ -780,34 +780,16 @@ def display_ticket_details(result):
         else:
             st.metric("Status", "Not Found")
     
-    # Performance Metrics - FIXED VERSION
+    # Performance Metrics - SIMPLIFIED VERSION (tanpa delta_color)
     st.markdown("#### 📊 Performance Metrics")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        performance_color = {
-            'excellent': 'green',
-            'good': 'blue', 
-            'fair': 'orange',
-            'poor': 'red'
-        }.get(result['performance_rating'], 'gray')
-        
-        # FIX: Gunakan delta="normal" untuk menghindari error delta_color
-        st.metric(
-            "Performance Rating", 
-            result['performance_rating'].upper(),
-            delta="normal",  # Tambahkan delta value
-            delta_color=performance_color
-        )
+        # Simple metric tanpa delta_color
+        st.metric("Performance Rating", result['performance_rating'].upper())
     
     with col2:
-        quality_color = "green" if result['quality_score'] >= 4 else "orange" if result['quality_score'] >= 2 else "red"
-        st.metric(
-            "Quality Score", 
-            f"{result['quality_score']}/6",
-            delta="normal",  # Tambahkan delta value
-            delta_color=quality_color
-        )
+        st.metric("Quality Score", f"{result['quality_score']}/6")
     
     with col3:
         st.metric("Total Messages", result['total_messages'])
@@ -828,6 +810,34 @@ def display_ticket_details(result):
     
     with col3:
         st.metric("Unanswered Pairs", result['total_qa_pairs'] - result['answered_pairs'])
+    
+    # Performance Rating dengan color coding menggunakan HTML/CSS
+    st.markdown("#### 🎯 Performance Details")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        performance_color = {
+            'excellent': '#28a745',
+            'good': '#007bff', 
+            'fair': '#ffc107',
+            'poor': '#dc3545'
+        }.get(result['performance_rating'], '#6c757d')
+        
+        st.markdown(f"""
+        <div style="background-color: {performance_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
+            <h3 style="margin: 0; font-size: 1.2rem;">Performance Rating</h3>
+            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['performance_rating'].upper()}</h1>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        quality_color = "#28a745" if result['quality_score'] >= 4 else "#ffc107" if result['quality_score'] >= 2 else "#dc3545"
+        st.markdown(f"""
+        <div style="background-color: {quality_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
+            <h3 style="margin: 0; font-size: 1.2rem;">Quality Score</h3>
+            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['quality_score']}/6</h1>
+        </div>
+        """, unsafe_allow_html=True)
     
     # Raw Data Access (if available)
     if st.checkbox("Show Raw Analysis Data"):
@@ -1474,6 +1484,7 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
 
 
 
