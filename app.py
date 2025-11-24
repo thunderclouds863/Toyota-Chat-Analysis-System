@@ -236,20 +236,18 @@ def main_interface():
     else:
         # Show sample data option
         st.markdown("---")
-        st.markdown("## 🎯 Try with Your Excel Data")
+        st.markdown("## 🎯 Try with Sample Data")
         
-        # Direct analysis of your provided file
-        excel_file_path = "chat_analysis_20251124_172748.xlsx"
-        if os.path.exists(excel_file_path):
-            if st.button("🧪 Analyze Your Excel Data", type="primary", use_container_width=True):
-                with st.spinner("Loading and analyzing your Excel data..."):
+        if os.path.exists("data/raw_conversation.xlsx"):
+            if st.button("🧪 Analyze Sample Data", use_container_width=True):
+                with st.spinner("Loading sample data..."):
                     try:
-                        # Load data langsung dari file Excel Anda
-                        df = pd.read_excel(excel_file_path)
-                        st.info(f"Loaded {len(df)} rows from your Excel file")
-                        
-                        # Jalankan analisis
-                        results, stats, excel_path = run_direct_analysis(df, 100, "Comprehensive Analysis")
+                        # Simulate file upload for sample data
+                        class MockFile:
+                            def __init__(self):
+                                self.name = "sample_data.xlsx"
+                        uploaded_file = MockFile()
+                        results, stats, excel_path = run_analysis(uploaded_file, 50, "Quick Analysis")
                         
                         if results is not None and stats is not None:
                             st.session_state.analysis_complete = True
@@ -258,12 +256,11 @@ def main_interface():
                             st.session_state.excel_file_path = excel_path
                             st.rerun()
                         else:
-                            st.error("Failed to analyze your Excel data")
+                            st.error("Failed to analyze sample data")
                     except Exception as e:
-                        st.error(f"Error analyzing your Excel data: {e}")
-                        st.error(traceback.format_exc())
+                        st.error(f"Error analyzing sample data: {e}")
         else:
-            st.info("📁 Please upload your Excel file to start analysis.")
+            st.info("📁 No sample data found. Please upload your own Excel file.")
 
 def run_direct_analysis(df, max_tickets, analysis_type):
     """Run analysis langsung dari DataFrame"""
@@ -1193,3 +1190,4 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
