@@ -42,9 +42,25 @@ st.markdown("""
     .metric-card {
         background-color: #f8f9fa;
         border-radius: 10px;
-        padding: 15px;
+        padding: 20px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         margin: 5px;
+        text-align: center;
+        border: 1px solid #e9ecef;
+    }
+    .metric-card h3 {
+        font-size: 0.9rem;
+        color: #6c757d;
+        margin: 0 0 8px 0;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .metric-card h1 {
+        font-size: 2rem;
+        color: #1f77b4;
+        margin: 0;
+        font-weight: 700;
     }
     .success-box {
         background-color: #d4edda;
@@ -351,44 +367,65 @@ def display_complete_results():
     
     # Quick Stats
     col1, col2, col3, col4, col5 = st.columns(5)
-    
+
     with col1:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.metric("Total Tickets", stats.get('total_tickets', 0))
-        st.markdown('</div>', unsafe_allow_html=True)
-    
+        st.markdown("""
+        <div class="metric-card">
+            <h3>Total Tickets</h3>
+            <h1>{}</h1>
+        </div>
+        """.format(stats.get('total_tickets', 0)), unsafe_allow_html=True)
+
     with col2:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         success_rate = stats.get('success_rate', 0) * 100
-        st.metric("Success Rate", f"{success_rate:.1f}%")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
+        st.markdown("""
+        <div class="metric-card">
+            <h3>Success Rate</h3>
+            <h1>{:.1f}%</h1>
+        </div>
+        """.format(success_rate), unsafe_allow_html=True)
+
     with col3:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         if 'overall_lead_times' in stats:
             avg_lead_time = stats['overall_lead_times'].get('final_reply_avg_minutes', 0)
-            st.metric("Avg Final Reply", f"{avg_lead_time:.1f} min")
+            metric_value = f"{avg_lead_time:.1f} min"
         else:
-            st.metric("Avg Lead Time", "N/A")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
+            metric_value = "N/A"
+        
+        st.markdown("""
+        <div class="metric-card">
+            <h3>Avg Final Reply</h3>
+            <h1>{}</h1>
+        </div>
+        """.format(metric_value), unsafe_allow_html=True)
+
     with col4:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         if 'performance_distribution' in stats:
             excellent = stats['performance_distribution'].get('excellent', 0)
-            st.metric("Excellent", excellent)
+            metric_value = excellent
         else:
-            st.metric("Excellent", "N/A")
-        st.markdown('</div>', unsafe_allow_html=True)
+            metric_value = "N/A"
+        
+        st.markdown("""
+        <div class="metric-card">
+            <h3>Excellent</h3>
+            <h1>{}</h1>
+        </div>
+        """.format(metric_value), unsafe_allow_html=True)
         
     with col5:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         if 'issue_type_distribution' in stats:
             total_issues = sum(stats['issue_type_distribution'].values())
-            st.metric("Issues Found", total_issues)
+            metric_value = total_issues
         else:
-            st.metric("Issues Found", "N/A")
-        st.markdown('</div>', unsafe_allow_html=True)
+            metric_value = "N/A"
+        
+        st.markdown("""
+        <div class="metric-card">
+            <h3>Issues Found</h3>
+            <h1>{}</h1>
+        </div>
+        """.format(metric_value), unsafe_allow_html=True)
 
     # SPECIAL CASES SUMMARY
     if 'reply_effectiveness' in stats:
