@@ -40,27 +40,58 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     .metric-card {
-        background-color: #f8f9fa;
-        border-radius: 10px;
-        padding: 20px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        margin: 5px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        padding: 25px 15px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        margin: 8px;
         text-align: center;
-        border: 1px solid #e9ecef;
+        border: none;
+        color: white;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
+
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .metric-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcf7f, #4d96ff);
+    }
+
     .metric-card h3 {
-        font-size: 0.9rem;
-        color: #6c757d;
-        margin: 0 0 8px 0;
+        font-size: 0.85rem;
+        color: rgba(255, 255, 255, 0.9);
+        margin: 0 0 12px 0;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 1px;
     }
+
     .metric-card h1 {
-        font-size: 2rem;
-        color: #1f77b4;
+        font-size: 2.2rem;
+        color: white;
         margin: 0;
         font-weight: 700;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .metric-card .trend {
+        font-size: 0.75rem;
+        margin-top: 8px;
+        padding: 4px 8px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.2);
+        display: inline-block;
     }
     .success-box {
         background-color: #d4edda;
@@ -82,13 +113,6 @@ st.markdown("""
         padding: 10px;
         margin: 10px 0;
         border-radius: 4px;
-    }
-    .download-section {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        margin: 20px 0;
     }
     .special-case {
         background-color: #e7f3ff;
@@ -450,7 +474,6 @@ def display_complete_results():
 
     # DOWNLOAD SECTION
     st.markdown("---")
-    st.markdown('<div class="download-section">', unsafe_allow_html=True)
     st.markdown("## 💾 Download Complete Analysis Results")
     
     if st.session_state.get('excel_file_path') and os.path.exists(st.session_state.excel_file_path):
