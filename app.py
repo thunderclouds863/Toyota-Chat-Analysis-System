@@ -1102,14 +1102,24 @@ def display_special_cases_tab(results, stats):
     
     successful = [r for r in results if r['status'] == 'success']
     
-    # Extract special cases dengan LOGIC BARU
+    # Extract special cases dengan LOGIC BARU yang SAFE
     customer_leave_cases = [r for r in successful if r.get('customer_leave')]
-    escalation_cases = [r for r in successful if r.get('_raw_reply_analysis', {}).get('escalation_case', False)]
     
-    # Gabungkan first-as-final ke customer leave (sesuai permintaan)
-    first_as_final_cases = [r for r in successful if 
-                           r.get('_raw_reply_analysis', {}).get('first_reply', {}).get('reply_type') == 'first_escalation' and 
-                           r.get('customer_leave')]
+    # Escalation cases - FIXED: handle None values
+    escalation_cases = []
+    for r in successful:
+        reply_analysis = r.get('_raw_reply_analysis', {})
+        if reply_analysis.get('escalation_case'):
+            escalation_cases.append(r)
+    
+    # Gabungkan first-as-final ke customer leave - FIXED: handle None values
+    first_as_final_cases = []
+    for r in successful:
+        if r.get('customer_leave'):
+            reply_analysis = r.get('_raw_reply_analysis', {})
+            first_reply = reply_analysis.get('first_reply')
+            if first_reply and first_reply.get('reply_type') == 'first_escalation':
+                first_as_final_cases.append(r)
     
     # SUMMARY CARDS
     st.markdown("### 📊 Summary Overview")
@@ -1135,7 +1145,7 @@ def display_special_cases_tab(results, stats):
         with st.expander("View Customer Leave Details", expanded=True):
             leave_data = []
             for result in customer_leave_cases:
-                # Cari reply yang digunakan
+                # Cari reply yang digunakan - FIXED: handle None values
                 final_reply_msg = "No proper reply"
                 if result.get('final_reply_message'):
                     final_reply_msg = result['final_reply_message'][:80] + '...'
@@ -1184,13 +1194,21 @@ def display_special_cases_tab(results, stats):
         with st.expander("View Escalation Details", expanded=True):
             escalation_data = []
             for result in escalation_cases:
+                # FIXED: handle None values untuk first_reply_message
                 first_reply_msg = result.get('first_reply_message', 'No first reply')
+                if first_reply_msg and len(first_reply_msg) > 100:
+                    first_reply_msg = first_reply_msg[:100] + '...'
+                
+                final_reply_msg = result.get('final_reply_message', 'No final reply')
+                if final_reply_msg and len(final_reply_msg) > 80:
+                    final_reply_msg = final_reply_msg[:80] + '...'
+                
                 escalation_data.append({
                     'Ticket ID': result['ticket_id'],
                     'Issue Type': result['final_issue_type'].upper(),
                     'Main Question': result['main_question'][:60] + '...',
-                    'First Reply (Escalation)': first_reply_msg[:100] + '...',
-                    'Final Reply': result.get('final_reply_message', 'No final reply')[:80] + '...',
+                    'First Reply (Escalation)': first_reply_msg,
+                    'Final Reply': final_reply_msg,
                     'Performance': result['performance_rating'].upper()
                 })
             
@@ -1217,6 +1235,32 @@ def display_special_cases_tab(results, stats):
     
     else:
         st.success("✅ No escalation cases detected")
+    
+    # FIRST AS FINAL CASES (jika ada)
+    if first_as_final_cases:
+        st.markdown("---")
+        st.markdown("### 🔀 First as Final Cases (Escalation + Customer Leave)")
+        
+        st.warning(f"**{len(first_as_final_cases)} cases** where escalation reply was used as final reply due to customer leave")
+        
+        with st.expander("View First-as-Final Details"):
+            first_final_data = []
+            for result in first_as_final_cases:
+                first_reply_msg = result.get('first_reply_message', 'No first reply')
+                if first_reply_msg and len(first_reply_msg) > 80:
+                    first_reply_msg = first_reply_msg[:80] + '...'
+                
+                first_final_data.append({
+                    'Ticket ID': result['ticket_id'],
+                    'Issue Type': result['final_issue_type'].upper(),
+                    'Main Question': result['main_question'][:60] + '...',
+                    'Escalation Reply Used': first_reply_msg,
+                    'Performance': result['performance_rating'].upper(),
+                    'Quality': result['quality_score']
+                })
+            
+            df_first_final = pd.DataFrame(first_final_data)
+            st.dataframe(df_first_final, use_container_width=True)
     
     # COMPREHENSIVE INSIGHTS
     if customer_leave_cases or escalation_cases:
@@ -1251,6 +1295,21 @@ def display_special_cases_tab(results, stats):
                 
                 # Show sample
                 sample_tickets = [r['ticket_id'] for r in escalation_cases[:3]]
+                st.write(f"**Sample Tickets:** {', '.join(sample_tickets)}")
+        
+        # First-as-Final Insights
+        if first_as_final_cases:
+            first_final_rate = (len(first_as_final_cases) / len(successful)) * 100
+            with st.expander(f"🔀 First-as-Final Insights ({first_final_rate:.1f}% rate)"):
+                st.write(f"**Issue:** {len(first_as_final_cases)} escalation cases were not followed up due to customer leave")
+                st.write("**Impact:** Escalated issues left unresolved, potential service gaps")
+                st.write("**Recommendations:**")
+                st.write("- Implement mandatory follow-up procedures for escalated cases")
+                st.write("- Set up alerts for unresolved escalation cases")
+                st.write("- Proactively contact customers who left during escalation")
+                
+                # Show sample
+                sample_tickets = [r['ticket_id'] for r in first_as_final_cases[:3]]
                 st.write(f"**Sample Tickets:** {', '.join(sample_tickets)}")
     
     else:
@@ -1396,6 +1455,7 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
 
 
 
