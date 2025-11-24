@@ -40,7 +40,7 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #667eea 0%, #2f0757 100%);
         border-radius: 12px;
         padding: 25px 15px;
         box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
@@ -56,16 +56,6 @@ st.markdown("""
     .metric-card:hover {
         transform: translateY(-5px);
         box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-    }
-
-    .metric-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcf7f, #4d96ff);
     }
 
     .metric-card h3 {
