@@ -1097,66 +1097,37 @@ def display_performance_tab(results, stats):
         st.dataframe(df_perf_metrics, use_container_width=True)
 
 def display_special_cases_tab(results, stats):
-    """Display special cases analysis dengan layout yang rapi"""
+    """Display special cases analysis yang disederhanakan"""
     st.markdown("## 🚨 Special Cases Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
     
-    # Extract all special cases
+    # Extract special cases dengan logic baru
     customer_leave_cases = [r for r in successful if r.get('customer_leave')]
     escalation_cases = [r for r in successful if r.get('_raw_reply_analysis', {}).get('special_cases', []) and 
-                       any('escalation' in case for case in r['_raw_reply_analysis']['special_cases'])]
-    first_as_final_cases = [r for r in successful if r.get('_raw_reply_analysis', {}).get('special_cases', []) and 
-                           any('first_as_final' in case for case in r['_raw_reply_analysis']['special_cases'])]
+                       'escalation_required' in r['_raw_reply_analysis']['special_cases']]
     
     # SUMMARY CARDS
     st.markdown("### 📊 Summary Overview")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        total_special = len(customer_leave_cases) + len(escalation_cases) + len(first_as_final_cases)
-        st.metric("Total Special Cases", total_special)
+        st.metric("Total Tickets", len(successful))
     
     with col2:
         st.metric("Customer Leave", len(customer_leave_cases))
     
     with col3:
-        st.metric("Escalation Cases", len(escalation_cases))
+        st.metric("Escalation Needed", len(escalation_cases))
     
-    with col4:
-        st.metric("First as Final", len(first_as_final_cases))
-    
-    # DETAILED SECTIONS
+    # CUSTOMER LEAVE CASES (include first-as-final)
     st.markdown("---")
-    
-    # Customer Leave Cases
     st.markdown("### 🚶 Customer Leave Cases")
+    
     if customer_leave_cases:
-        st.info(f"**{len(customer_leave_cases)} conversations** where customer left without response")
+        st.warning(f"**{len(customer_leave_cases)} conversations** where customer left without proper resolution")
         
-        # Create expandable table
-        with st.expander("View Customer Leave Cases", expanded=True):
-            leave_data = []
-            for result in customer_leave_cases:
-                final_reply_msg = "No final reply"
-                if result.get('final_reply_message'):
-                    final_reply_msg = result['final_reply_message'][:80] + '...'
-                elif result.get('first_reply_message'):
-                    final_reply_msg = f"FIRST AS FINAL: {result['first_reply_message'][:80]}..."
-                
-                leave_data.append({
-                    'Ticket ID': result['ticket_id'],
-                    'Issue Type': result['final_issue_type'].upper(),
-                    'Main Question': result['main_question'][:50] + '...',
-                    'Performance': result['performance_rating'].upper(),
-                    'Quality Score': result['quality_score']
-                })
-            
-            df_leave = pd.DataFrame(leave_data)
-            st.dataframe(df_leave, use_container_width=True)
-        
-        # Impact analysis
-        st.markdown("#### 📈 Impact Analysis")
+        # Analysis metrics
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -1164,215 +1135,134 @@ def display_special_cases_tab(results, stats):
             st.metric("Avg Quality Score", f"{avg_quality:.1f}/6")
         
         with col2:
-            perf_counts = pd.Series([r['performance_rating'] for r in customer_leave_cases]).value_counts()
-            most_common = perf_counts.index[0] if not perf_counts.empty else "N/A"
-            st.metric("Most Common Performance", most_common.upper())
+            serious_count = sum(1 for r in customer_leave_cases if r['final_issue_type'] in ['serious', 'complaint'])
+            st.metric("Serious/Complaint", f"{serious_count}/{len(customer_leave_cases)}")
         
         with col3:
-            issue_counts = pd.Series([r['final_issue_type'] for r in customer_leave_cases]).value_counts()
-            most_common_issue = issue_counts.index[0] if not issue_counts.empty else "N/A"
-            st.metric("Most Common Issue", most_common_issue.upper())
-            
-    else:
-        st.success("✅ No customer leave cases detected")
-    
-    st.markdown("---")
-    
-    # Escalation Cases
-    st.markdown("### 🔄 Escalation Cases")
-    if escalation_cases:
-        st.info(f"**{len(escalation_cases)} issues** requiring follow-up/escalation")
+            first_reply_rate = (sum(1 for r in customer_leave_cases if r['first_reply_found']) / len(customer_leave_cases)) * 100
+            st.metric("First Reply Rate", f"{first_reply_rate:.1f}%")
         
-        with st.expander("View Escalation Cases", expanded=True):
+        # Detailed table
+        with st.expander("View Customer Leave Details", expanded=True):
+            leave_data = []
+            for result in customer_leave_cases:
+                # Tentukan reply yang digunakan
+                reply_used = "No reply"
+                if result.get('final_reply_message'):
+                    reply_used = "Final reply"
+                elif result.get('first_reply_message'):
+                    reply_used = "First reply (as final)"
+                
+                leave_data.append({
+                    'Ticket ID': result['ticket_id'],
+                    'Issue Type': result['final_issue_type'].upper(),
+                    'Main Question': result['main_question'][:60] + '...',
+                    'Reply Used': reply_used,
+                    'First Reply': '✅' if result['first_reply_found'] else '❌',
+                    'Performance': result['performance_rating'].upper()
+                })
+            
+            df_leave = pd.DataFrame(leave_data)
+            st.dataframe(df_leave, use_container_width=True)
+        
+        # Recommendations
+        st.markdown("#### 💡 Recommendations")
+        st.info("""
+        **Untuk Customer Leave Cases:**
+        - Implement proactive engagement strategies
+        - Reduce response times for initial replies  
+        - Set up follow-up procedures for unresolved serious issues
+        - Monitor customer satisfaction for these cases
+        """)
+        
+    else:
+        st.success("✅ Excellent! No customer leave cases detected.")
+    
+    # ESCALATION CASES (hanya serious/complaint)
+    st.markdown("---")
+    st.markdown("### 🔄 Escalation Required Cases")
+    
+    if escalation_cases:
+        st.info(f"**{len(escalation_cases)} serious/complaint issues** requiring team escalation")
+        
+        # Analysis metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            complaint_count = sum(1 for r in escalation_cases if r['final_issue_type'] == 'complaint')
+            st.metric("Complaint Cases", complaint_count)
+        
+        with col2:
+            serious_count = sum(1 for r in escalation_cases if r['final_issue_type'] == 'serious')
+            st.metric("Serious Cases", serious_count)
+        
+        with col3:
+            avg_response_time = np.mean([r.get('first_reply_lead_time_minutes', 0) for r in escalation_cases if r.get('first_reply_lead_time_minutes')])
+            st.metric("Avg First Response", f"{avg_response_time:.1f} min")
+        
+        # Detailed table
+        with st.expander("View Escalation Details", expanded=True):
             escalation_data = []
             for result in escalation_cases:
                 escalation_data.append({
                     'Ticket ID': result['ticket_id'],
                     'Issue Type': result['final_issue_type'].upper(),
-                    'Main Question': result['main_question'][:50] + '...',
-                    'First Reply': '✅' if result['first_reply_found'] else '❌',
+                    'Main Question': result['main_question'][:60] + '...',
+                    'First Reply Time': f"{result.get('first_reply_lead_time_minutes', 'N/A')} min",
+                    'Final Reply': '✅' if result['final_reply_found'] else '❌',
                     'Performance': result['performance_rating'].upper()
                 })
             
             df_escalation = pd.DataFrame(escalation_data)
             st.dataframe(df_escalation, use_container_width=True)
         
-        # Escalation analysis
-        st.markdown("#### 📊 Escalation Analysis")
+        # Recommendations
+        st.markdown("#### 💡 Recommendations")
+        st.info("""
+        **Untuk Escalation Cases:**
+        - Empower agents with better solution knowledge
+        - Improve first-contact resolution rate
+        - Set clear escalation protocols and timelines
+        - Monitor escalation resolution times
+        """)
+        
+    else:
+        st.success("✅ Good! No escalation-required cases detected.")
+    
+    # OVERALL INSIGHTS
+    if customer_leave_cases or escalation_cases:
+        st.markdown("---")
+        st.markdown("### 📈 Overall Insights")
+        
+        total_special = len(customer_leave_cases) + len(escalation_cases)
+        special_rate = (total_special / len(successful)) * 100
+        
         col1, col2 = st.columns(2)
         
         with col1:
-            issue_counts = pd.Series([r['final_issue_type'] for r in escalation_cases]).value_counts()
-            if not issue_counts.empty:
-                st.write("**Issue Type Distribution:**")
-                for issue_type, count in issue_counts.items():
-                    percentage = (count / len(escalation_cases)) * 100
-                    st.write(f"- {issue_type.upper()}: {count} ({percentage:.1f}%)")
+            st.metric("Special Cases Rate", f"{special_rate:.1f}%")
+            
+            if special_rate > 20:
+                st.error("⚠️ High special cases rate - needs attention")
+            elif special_rate > 10:
+                st.warning("⚠️ Moderate special cases rate - monitor closely")
+            else:
+                st.success("✅ Low special cases rate - good performance")
         
         with col2:
-            perf_counts = pd.Series([r['performance_rating'] for r in escalation_cases]).value_counts()
-            if not perf_counts.empty:
-                st.write("**Performance Distribution:**")
-                for perf, count in perf_counts.items():
-                    percentage = (count / len(escalation_cases)) * 100
-                    st.write(f"- {perf.upper()}: {count} ({percentage:.1f}%)")
-                    
-    else:
-        st.success("✅ No escalation cases detected")
-    
-    st.markdown("---")
-    
-    # First as Final Cases
-    st.markdown("### 🔀 First as Final Cases")
-    if first_as_final_cases:
-        st.info(f"**{len(first_as_final_cases)} cases** using first reply as final reply")
-        
-        with st.expander("View First-as-Final Cases", expanded=True):
-            first_final_data = []
-            for result in first_as_final_cases:
-                first_final_data.append({
-                    'Ticket ID': result['ticket_id'],
-                    'Issue Type': result['final_issue_type'].upper(),
-                    'Main Question': result['main_question'][:50] + '...',
-                    'Customer Leave': '✅' if result.get('customer_leave') else '❌',
-                    'Performance': result['performance_rating'].upper()
-                })
+            avg_quality_special = np.mean([r['quality_score'] for r in customer_leave_cases + escalation_cases])
+            avg_quality_normal = np.mean([r['quality_score'] for r in successful if r not in customer_leave_cases + escalation_cases])
+            quality_diff = avg_quality_special - avg_quality_normal
             
-            df_first_final = pd.DataFrame(first_final_data)
-            st.dataframe(df_first_final, use_container_width=True)
-        
-        # Analysis
-        st.markdown("#### 📋 Case Analysis")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            customer_leave_count = sum(1 for r in first_as_final_cases if r.get('customer_leave'))
-            st.metric("With Customer Leave", customer_leave_count)
-        
-        with col2:
-            serious_complaint_count = sum(1 for r in first_as_final_cases if r['final_issue_type'] in ['serious', 'complaint'])
-            st.metric("Serious/Complaint Issues", serious_complaint_count)
-        
-        with col3:
-            avg_quality = np.mean([r['quality_score'] for r in first_as_final_cases])
-            st.metric("Avg Quality Score", f"{avg_quality:.1f}/6")
+            st.metric("Quality Impact", f"{quality_diff:+.1f}")
             
-    else:
-        st.success("✅ No first-as-final cases detected")
-    
-    # COMPREHENSIVE ANALYSIS (jika ada special cases)
-    if customer_leave_cases or escalation_cases or first_as_final_cases:
-        st.markdown("---")
-        st.markdown("### 📊 Comprehensive Analysis")
-        
-        # Performance comparison chart
-        st.markdown("#### 📈 Performance Comparison")
-        
-        special_cases = customer_leave_cases + escalation_cases + first_as_final_cases
-        normal_cases = [r for r in successful if r not in special_cases]
-        
-        if special_cases and normal_cases:
-            # Prepare data for comparison
-            comparison_data = {
-                'Category': ['Special Cases', 'Normal Cases'],
-                'Count': [len(special_cases), len(normal_cases)],
-                'Avg Quality Score': [
-                    np.mean([r['quality_score'] for r in special_cases]),
-                    np.mean([r['quality_score'] for r in normal_cases])
-                ],
-                'First Reply Rate (%)': [
-                    (sum(1 for r in special_cases if r['first_reply_found']) / len(special_cases)) * 100,
-                    (sum(1 for r in normal_cases if r['first_reply_found']) / len(normal_cases)) * 100
-                ],
-                'Final Reply Rate (%)': [
-                    (sum(1 for r in special_cases if r['final_reply_found']) / len(special_cases)) * 100,
-                    (sum(1 for r in normal_cases if r['final_reply_found']) / len(normal_cases)) * 100
-                ]
-            }
-            
-            df_comparison = pd.DataFrame(comparison_data)
-            
-            # Display comparison metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Special Cases Rate", f"{(len(special_cases)/len(successful))*100:.1f}%")
-            
-            with col2:
-                quality_diff = comparison_data['Avg Quality Score'][0] - comparison_data['Avg Quality Score'][1]
-                st.metric("Quality Difference", f"{quality_diff:+.1f}")
-            
-            with col3:
-                first_reply_diff = comparison_data['First Reply Rate (%)'][0] - comparison_data['First Reply Rate (%)'][1]
-                st.metric("First Reply Diff", f"{first_reply_diff:+.1f}%")
-            
-            with col4:
-                final_reply_diff = comparison_data['Final Reply Rate (%)'][0] - comparison_data['Final Reply Rate (%)'][1]
-                st.metric("Final Reply Diff", f"{final_reply_diff:+.1f}%")
-            
-            # Visual comparison
-            st.markdown("##### 📊 Quality Score Comparison")
-            fig_quality = px.bar(
-                df_comparison,
-                x='Category',
-                y='Avg Quality Score',
-                title='Average Quality Score: Special vs Normal Cases',
-                color='Category',
-                color_discrete_sequence=['#FF6B6B', '#4ECDC4']
-            )
-            st.plotly_chart(fig_quality, use_container_width=True)
-        
-        # RECOMMENDATIONS
-        st.markdown("---")
-        st.markdown("### 💡 Recommendations & Insights")
-        
-        recommendations = []
-        
-        if customer_leave_cases:
-            rate = (len(customer_leave_cases) / len(successful)) * 100
-            recommendations.append({
-                'type': '🚶 Customer Leave',
-                'issue': f'High customer drop-off rate ({rate:.1f}%)',
-                'suggestion': 'Implement proactive engagement and faster response times',
-                'priority': 'High' if rate > 10 else 'Medium'
-            })
-        
-        if escalation_cases:
-            rate = (len(escalation_cases) / len(successful)) * 100
-            recommendations.append({
-                'type': '🔄 Escalation Required',
-                'issue': f'Frequent need for follow-up ({rate:.1f}%)',
-                'suggestion': 'Empower agents with better solutions and knowledge base',
-                'priority': 'Medium' if rate > 15 else 'Low'
-            })
-        
-        if first_as_final_cases:
-            rate = (len(first_as_final_cases) / len(successful)) * 100
-            recommendations.append({
-                'type': '🔀 First as Final',
-                'issue': f'Insufficient follow-up in {rate:.1f}% cases',
-                'suggestion': 'Improve follow-up procedures and quality checks',
-                'priority': 'Medium'
-            })
-        
-        for rec in recommendations:
-            with st.expander(f"{rec['type']} - Priority: {rec['priority']}"):
-                st.write(f"**Issue:** {rec['issue']}")
-                st.write(f"**Recommendation:** {rec['suggestion']}")
+            if quality_diff < -1:
+                st.error("📉 Significant quality impact from special cases")
+            elif quality_diff < 0:
+                st.warning("📉 Moderate quality impact")
+            else:
+                st.success("📈 Minimal quality impact")
                 
-                # Show affected tickets sample
-                if rec['type'] == '🚶 Customer Leave':
-                    sample_tickets = [r['ticket_id'] for r in customer_leave_cases[:3]]
-                elif rec['type'] == '🔄 Escalation Required':
-                    sample_tickets = [r['ticket_id'] for r in escalation_cases[:3]]
-                else:
-                    sample_tickets = [r['ticket_id'] for r in first_as_final_cases[:3]]
-                
-                st.write(f"**Sample Tickets:** {', '.join(sample_tickets)}")
-    
-    else:
-        st.success("🎉 Excellent! No special cases detected in this analysis.")
-
 def display_raw_data_tab(results):
     """Display raw data tab untuk melihat semua hasil parse"""
     st.markdown("## 📋 All Parsed Data")
@@ -1513,6 +1403,7 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
 
 
 
