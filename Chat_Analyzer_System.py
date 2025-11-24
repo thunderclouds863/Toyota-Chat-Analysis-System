@@ -53,10 +53,6 @@ class Config:
             '[ Facebook Messenger ] ToyotaID'
         ]
     }
-    
-    # Reply thresholds - DIPERBAIKI (lebih flexible)
-    FIRST_REPLY_MAX_WORDS = 8  # First reply biasanya lebih pendek
-    FINAL_REPLY_MIN_WORDS = 6  # Final reply minimal 6 kata
 
 config = Config()
 
@@ -231,7 +227,7 @@ class ConversationParser:
         ]
         
         self.customer_leave_timeout = 30  # 30 menit
-
+    
     def detect_conversation_start(self, ticket_df):
         """Deteksi kapan conversation benar-benar dimulai dengan operator"""
         ticket_df = ticket_df.sort_values('parsed_timestamp').reset_index(drop=True)
@@ -1763,6 +1759,36 @@ class CompleteAnalysisPipeline:
             '_raw_reply_analysis': reply_analysis
         }
 
+    def _calculate_conversation_duration(self, ticket_df):
+        """Hitung durasi conversation dalam menit"""
+        if len(ticket_df) < 2:
+            return 0
+        
+        try:
+            start_time = ticket_df['parsed_timestamp'].min()
+            end_time = ticket_df['parsed_timestamp'].max()
+            duration_minutes = (end_time - start_time).total_seconds() / 60
+            return round(duration_minutes, 2)
+        except:
+            return 0
+    
+    def _resolve_issue_type(self, detected_type, ml_prediction, ml_confidence):
+        """Resolve final issue type antara rule-based dan ML"""
+        if ml_confidence > 0.7:  # High confidence ML
+            return ml_prediction
+        elif ml_confidence > 0.5 and ml_prediction == detected_type:  # Consistent
+            return ml_prediction
+        else:  # Trust rule-based detection
+            return detected_type
+    
+    def _extract_threshold_violations(self, threshold_checks):
+        """Extract threshold violations dari analysis"""
+        violations = []
+        for key, value in threshold_checks.items():
+            if 'exceeded' in key and value:
+                violations.append(key)
+        return violations
+    
     def _create_ticket_result(self, ticket_id, status, reason, extra_data):
         """Create standardized result object"""
         result = {
@@ -1773,16 +1799,7 @@ class CompleteAnalysisPipeline:
         }
         result.update(extra_data)
         return result
-
-    def _resolve_issue_type(self, detected_type, ml_prediction, ml_confidence):
-        """Resolve final issue type antara rule-based dan ML"""
-        if ml_confidence > 0.7:  # High confidence ML
-            return ml_prediction
-        elif ml_confidence > 0.5 and ml_prediction == detected_type:  # Consistent
-            return ml_prediction
-        else:  # Trust rule-based detection
-            return detected_type
-
+    
     def analyze_all_tickets(self, df, sample_size=None, max_tickets=None):
         """Analisis semua tickets dengan comprehensive reporting"""
         print("🚀 STARTING COMPLETE ANALYSIS PIPELINE")
@@ -1832,12 +1849,13 @@ class CompleteAnalysisPipeline:
         self._print_summary_report()
         
         return self.results, self.analysis_stats
-
+    
     def _calculate_comprehensive_stats(self, analysis_time, total_tickets):
-        """Hitung comprehensive statistics dari results"""
+        """Hitung comprehensive statistics dari results - FIXED VERSION"""
         successful = [r for r in self.results if r['status'] == 'success']
         failed = [r for r in self.results if r['status'] == 'failed']
         
+        # BASIC STATS - PASTIKAN SEMUA KEY ADA
         stats = {
             'total_tickets': len(self.results),
             'successful_analysis': len(successful),
@@ -1858,7 +1876,7 @@ class CompleteAnalysisPipeline:
         performance_ratings = [r['performance_rating'] for r in successful]
         stats['performance_distribution'] = dict(Counter(performance_ratings))
         
-        # Lead time statistics
+        # Lead time statistics - PERBAIKAN: Hitung average lead time per issue type
         lead_time_stats = self._calculate_lead_time_statistics(successful)
         stats.update(lead_time_stats)
         
@@ -1869,6 +1887,12 @@ class CompleteAnalysisPipeline:
             'avg_quality_rating': Counter([r['quality_rating'] for r in successful]).most_common(1)[0][0] if successful else 'N/A'
         }
         
+        # Threshold violations
+        all_violations = []
+        for r in successful:
+            all_violations.extend(r.get('threshold_violations', []))
+        stats['threshold_violations'] = dict(Counter(all_violations))
+        
         # Reply effectiveness
         stats['reply_effectiveness'] = {
             'first_reply_found_rate': sum(1 for r in successful if r['first_reply_found']) / len(successful) if successful else 0,
@@ -1878,6 +1902,24 @@ class CompleteAnalysisPipeline:
             'follow_up_cases': sum(1 for r in successful if r.get('follow_up_ticket'))
         }
 
+        # Q-A Pairs Statistics
+        total_qa_pairs = sum(r['total_qa_pairs'] for r in successful)
+        total_answered_pairs = sum(r['answered_pairs'] for r in successful)
+        stats['qa_pairs_stats'] = {
+            'total_qa_pairs': total_qa_pairs,
+            'total_answered_pairs': total_answered_pairs,
+            'answer_rate': total_answered_pairs / total_qa_pairs if total_qa_pairs > 0 else 0,
+            'avg_qa_pairs_per_ticket': total_qa_pairs / len(successful) if successful else 0
+        }
+
+        # Raw Data Availability
+        raw_data_available = {
+            'qa_pairs_available': sum(1 for r in successful if '_raw_qa_pairs' in r),
+            'main_issue_available': sum(1 for r in successful if '_raw_main_issue' in r),
+            'reply_analysis_available': sum(1 for r in successful if '_raw_reply_analysis' in r)
+        }
+        stats['raw_data_availability'] = raw_data_available
+        
         return stats
 
     def _calculate_lead_time_statistics(self, successful_results):
@@ -1890,7 +1932,7 @@ class CompleteAnalysisPipeline:
         all_final_lead_times = [r['final_reply_lead_time_minutes'] for r in successful_results 
                                if r.get('final_reply_lead_time_minutes') is not None]
         
-        # Overall statistics
+        # Overall statistics - PASTIKAN DEFAULT VALUES
         lead_time_stats['overall_lead_times'] = {
             'first_reply_avg_minutes': np.mean(all_first_lead_times) if all_first_lead_times else 0,
             'first_reply_median_minutes': np.median(all_first_lead_times) if all_first_lead_times else 0,
@@ -1934,23 +1976,25 @@ class CompleteAnalysisPipeline:
             }
         
         return lead_time_stats
-
+    
     def _print_summary_report(self):
-        """Print comprehensive summary report"""
+        """Print comprehensive summary report dengan lead time statistics - FIXED VERSION"""
         stats = self.analysis_stats
         
         print(f"📊 COMPREHENSIVE ANALYSIS REPORT")
         print(f"   • Total Tickets: {stats.get('total_tickets', 0)}")
         print(f"   • Successful Analysis: {stats.get('successful_analysis', 0)} ({stats.get('success_rate', 0)*100:.1f}%)")
+        print(f"   • Analysis Duration: {stats.get('analysis_duration_seconds', 0):.1f}s")
+        print(f"   • Avg Time per Ticket: {stats.get('avg_analysis_time_per_ticket', 0):.2f}s")
         
-        # LEAD TIME SUMMARY
+        # LEAD TIME SUMMARY - REQUIREMENT BARU
         if 'overall_lead_times' in stats:
             overall_lt = stats['overall_lead_times']
             print(f"\n⏱️ OVERALL LEAD TIME SUMMARY:")
             print(f"   • First Reply - Avg: {overall_lt.get('first_reply_avg_minutes', 0):.1f} min (n={overall_lt.get('first_reply_samples', 0)})")
             print(f"   • Final Reply - Avg: {overall_lt.get('final_reply_avg_minutes', 0):.1f} min (n={overall_lt.get('final_reply_samples', 0)})")
         
-        # LEAD TIME PER ISSUE TYPE
+        # LEAD TIME PER ISSUE TYPE - REQUIREMENT BARU
         if 'issue_type_lead_times' in stats:
             print(f"\n📈 LEAD TIME BY ISSUE TYPE:")
             for issue_type, lt_stats in stats['issue_type_lead_times'].items():
@@ -1973,6 +2017,11 @@ class CompleteAnalysisPipeline:
                 percentage = (count / stats['successful_analysis']) * 100
                 print(f"   • {rating.upper()}: {count} ({percentage:.1f}%)")
         
+        if 'threshold_violations' in stats:
+            print(f"\n🚨 THRESHOLD VIOLATIONS:")
+            for violation, count in stats['threshold_violations'].items():
+                print(f"   • {violation}: {count}")
+        
         if 'reply_effectiveness' in stats:
             eff = stats['reply_effectiveness']
             print(f"\n💬 REPLY EFFECTIVENESS:")
@@ -1982,7 +2031,237 @@ class CompleteAnalysisPipeline:
             print(f"   • Customer Leave Cases: {eff.get('customer_leave_cases', 0)}")
             print(f"   • Follow-up Cases: {eff.get('follow_up_cases', 0)}")
 
-# Model Training & Evaluation dengan Real Data
+        if 'qa_pairs_stats' in stats:
+            qa_stats = stats['qa_pairs_stats']
+            print(f"\n🔗 Q-A PAIRS STATISTICS:")
+            print(f"   • Total Q-A Pairs: {qa_stats.get('total_qa_pairs', 0)}")
+            print(f"   • Answered Pairs: {qa_stats.get('total_answered_pairs', 0)} ({qa_stats.get('answer_rate', 0)*100:.1f}%)")
+            print(f"   • Avg Pairs per Ticket: {qa_stats.get('avg_qa_pairs_per_ticket', 0):.1f}")
+
+    def export_results(self, output_file="output/pipeline_results.xlsx"):
+        """Export results ke Excel file dengan lead time summary"""
+        try:
+            # Prepare data untuk export
+            export_data = []
+            
+            for result in self.results:
+                if result['status'] == 'success':
+                    row = {
+                        'ticket_id': result['ticket_id'],
+                        'issue_type': result['final_issue_type'],
+                        'main_question': result['main_question'],
+                        'performance_rating': result['performance_rating'],
+                        'quality_rating': result['quality_rating'],
+                        'quality_score': result['quality_score'],
+                        'first_reply_lead_time_minutes': result.get('first_reply_lead_time_minutes'),
+                        'final_reply_lead_time_minutes': result.get('final_reply_lead_time_minutes'),
+                        'first_reply_found': result['first_reply_found'],
+                        'final_reply_found': result['final_reply_found'],
+                        'customer_leave': result.get('customer_leave', False),
+                        'follow_up_ticket': result.get('follow_up_ticket', ''),
+                        'recommendation': result['recommendation'],
+                        'detection_confidence': result['detection_confidence'],
+                        'ml_confidence': result['ml_confidence'],
+                        'total_messages': result['total_messages'],
+                        'total_qa_pairs': result['total_qa_pairs'],
+                        'answered_pairs': result['answered_pairs'],
+                        'first_reply_message': result.get('first_reply_message', '')[:100] + '...' if result.get('first_reply_message') else '',
+                        'final_reply_message': result.get('final_reply_message', '')[:100] + '...' if result.get('final_reply_message') else ''
+                    }
+                    export_data.append(row)
+                else:
+                    row = {
+                        'ticket_id': result['ticket_id'],
+                        'issue_type': 'FAILED',
+                        'main_question': result.get('failure_reason', 'Analysis failed'),
+                        'performance_rating': 'N/A',
+                        'quality_rating': 'N/A',
+                        'quality_score': 0,
+                        'first_reply_lead_time_minutes': None,
+                        'final_reply_lead_time_minutes': None,
+                        'first_reply_found': False,
+                        'final_reply_found': False,
+                        'customer_leave': False,
+                        'follow_up_ticket': '',
+                        'recommendation': 'Analysis failed',
+                        'detection_confidence': 0,
+                        'ml_confidence': 0,
+                        'total_messages': 0,
+                        'total_qa_pairs': 0,
+                        'answered_pairs': 0,
+                        'first_reply_message': '',
+                        'final_reply_message': ''
+                    }
+                    export_data.append(row)
+            
+            # Create DataFrame dan save
+            df_export = pd.DataFrame(export_data)
+            
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                # Detailed results
+                df_export.to_excel(writer, sheet_name='Detailed_Results', index=False)
+                
+                # Summary statistics
+                summary_data = self._create_summary_sheet()
+                summary_df = pd.DataFrame(summary_data)
+                summary_df.to_excel(writer, sheet_name='Summary_Statistics', index=False)
+                
+                # Performance metrics
+                perf_data = self._create_performance_sheet()
+                perf_df = pd.DataFrame(perf_data)
+                perf_df.to_excel(writer, sheet_name='Performance_Metrics', index=False)
+                
+                # Lead Time Summary - SHEET BARU
+                lead_time_data = self._create_lead_time_summary_sheet()
+                lead_time_df = pd.DataFrame(lead_time_data)
+                lead_time_df.to_excel(writer, sheet_name='Lead_Time_Summary', index=False)
+            
+            print(f"💾 Results exported to: {output_file}")
+            return output_file
+            
+        except Exception as e:
+            print(f"❌ Error exporting results: {e}")
+            return None
+    
+    def _create_lead_time_summary_sheet(self):
+        """Create lead time summary sheet - REQUIREMENT BARU"""
+        stats = self.analysis_stats
+        
+        lead_time_data = [
+            ['LEAD TIME SUMMARY REPORT', '', '', ''],
+            ['Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '', ''],
+            ['', '', '', ''],
+            ['OVERALL LEAD TIME STATISTICS', 'First Reply', 'Final Reply', ''],
+            ['Average Lead Time (minutes)', 
+             f"{stats.get('overall_lead_times', {}).get('first_reply_avg_minutes', 0):.1f}",
+             f"{stats.get('overall_lead_times', {}).get('final_reply_avg_minutes', 0):.1f}", ''],
+            ['Median Lead Time (minutes)',
+             f"{stats.get('overall_lead_times', {}).get('first_reply_median_minutes', 0):.1f}", 
+             f"{stats.get('overall_lead_times', {}).get('final_reply_median_minutes', 0):.1f}", ''],
+            ['Number of Samples',
+             stats.get('overall_lead_times', {}).get('first_reply_samples', 0),
+             stats.get('overall_lead_times', {}).get('final_reply_samples', 0), ''],
+            ['', '', '', ''],
+            ['LEAD TIME BY ISSUE TYPE', 'First Reply Avg (min)', 'Final Reply Avg (min)', 'Samples']
+        ]
+        
+        if 'issue_type_lead_times' in stats:
+            for issue_type, lt_stats in stats['issue_type_lead_times'].items():
+                first_avg = lt_stats.get('first_reply_avg_minutes', 0)
+                final_avg = lt_stats.get('final_reply_avg_minutes', 0)
+                
+                first_str = f"{first_avg:.1f}" if first_avg is not None else "N/A"
+                final_str = f"{final_avg:.1f}" if final_avg is not None else "N/A"
+                samples_str = f"F:{lt_stats.get('first_reply_samples', 0)} / R:{lt_stats.get('final_reply_samples', 0)}"
+                
+                lead_time_data.append([
+                    issue_type.upper(),
+                    first_str,
+                    final_str,
+                    samples_str
+                ])
+        
+        return lead_time_data
+
+    def _create_summary_sheet(self):
+        """Create summary sheet data"""
+        stats = self.analysis_stats
+        
+        summary_data = [
+            ['COMPLETE ANALYSIS PIPELINE - SUMMARY REPORT', '', ''],
+            ['Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ''],
+            ['', '', ''],
+            ['OVERALL STATISTICS', '', ''],
+            ['Total Tickets Processed', stats.get('total_tickets', 0), ''],
+            ['Successful Analysis', stats.get('successful_analysis', 0), ''],
+            ['Failed Analysis', stats.get('failed_analysis', 0), ''],
+            ['Success Rate', f"{stats.get('success_rate', 0)*100:.1f}%", ''],
+            ['Total Analysis Time', f"{stats.get('analysis_duration_seconds', 0):.1f} seconds", ''],
+            ['Average Time per Ticket', f"{stats.get('avg_analysis_time_per_ticket', 0):.2f} seconds", ''],
+            ['', '', ''],
+            ['LEAD TIME SUMMARY', 'First Reply', 'Final Reply']
+        ]
+        
+        # Add lead time summary
+        if 'overall_lead_times' in stats:
+            overall_lt = stats['overall_lead_times']
+            summary_data.extend([
+                ['Average Lead Time (minutes)', 
+                 f"{overall_lt.get('first_reply_avg_minutes', 0):.1f}", 
+                 f"{overall_lt.get('final_reply_avg_minutes', 0):.1f}"],
+                ['Number of Samples', 
+                 overall_lt.get('first_reply_samples', 0), 
+                 overall_lt.get('final_reply_samples', 0)]
+            ])
+        
+        summary_data.extend([
+            ['', '', ''],
+            ['ISSUE TYPE DISTRIBUTION', 'Count', 'Percentage']
+        ])
+        
+        if 'issue_type_distribution' in stats:
+            for issue_type, count in stats['issue_type_distribution'].items():
+                percentage = (count / stats.get('successful_analysis', 1)) * 100
+                summary_data.append([issue_type.title(), count, f"{percentage:.1f}%"])
+        
+        summary_data.extend([
+            ['', '', ''],
+            ['PERFORMANCE DISTRIBUTION', 'Count', 'Percentage']
+        ])
+        
+        if 'performance_distribution' in stats:
+            for rating, count in stats['performance_distribution'].items():
+                percentage = (count / stats.get('successful_analysis', 1)) * 100
+                summary_data.append([rating.upper(), count, f"{percentage:.1f}%"])
+        
+        return summary_data
+    
+    def _create_performance_sheet(self):
+        """Create performance metrics sheet"""
+        stats = self.analysis_stats
+        
+        perf_data = [
+            ['PERFORMANCE METRICS', 'Value', ''],
+            ['Reply Effectiveness', '', ''],
+            ['First Reply Found Rate', f"{stats.get('reply_effectiveness', {}).get('first_reply_found_rate', 0)*100:.1f}%", ''],
+            ['Final Reply Found Rate', f"{stats.get('reply_effectiveness', {}).get('final_reply_found_rate', 0)*100:.1f}%", ''],
+            ['Both Replies Found Rate', f"{stats.get('reply_effectiveness', {}).get('both_replies_found_rate', 0)*100:.1f}%", ''],
+            ['Customer Leave Cases', stats.get('reply_effectiveness', {}).get('customer_leave_cases', 0), ''],
+            ['Follow-up Cases', stats.get('reply_effectiveness', {}).get('follow_up_cases', 0), ''],
+            ['', '', ''],
+            ['Lead Time Statistics', '', '']
+        ]
+        
+        if 'overall_lead_times' in stats:
+            lt = stats['overall_lead_times']
+            perf_data.extend([
+                ['Average First Reply Time', f"{lt.get('first_reply_avg_minutes', 0):.2f} minutes", ''],
+                ['Average Final Reply Time', f"{lt.get('final_reply_avg_minutes', 0):.2f} minutes", ''],
+                ['First Reply Samples', lt.get('first_reply_samples', 0), ''],
+                ['Final Reply Samples', lt.get('final_reply_samples', 0), '']
+            ])
+        
+        perf_data.extend([
+            ['', '', ''],
+            ['Quality Metrics', '', ''],
+            ['Average Quality Score', f"{stats.get('quality_stats', {}).get('avg_quality_score', 0):.2f}/6", ''],
+            ['Most Common Quality Rating', stats.get('quality_stats', {}).get('avg_quality_rating', 'N/A').upper(), '']
+        ])
+        
+        return perf_data
+
+# Initialize Fixed Pipeline
+pipeline = CompleteAnalysisPipeline()
+
+print("✅ FULLY FIXED Complete Analysis Pipeline Ready!")
+print("   ✓ All raw data preserved for export")
+print("   ✓ Enhanced statistics tracking")
+print("   ✓ Customer leave detection")
+print("   ✓ Follow-up ticket analysis")
+print("   ✓ Lead time summary per issue type")
+print("=" * 60)
+
+# Model Training & Evaluation dengan Real Data (FIXED)
 class ModelTrainer:
     def __init__(self, pipeline):
         self.pipeline = pipeline
@@ -2104,12 +2383,46 @@ class ModelTrainer:
                 'test_distribution': dict(Counter(y_test))
             }
             
+            # Cross-validation untuk lebih robust evaluation
+            cv_results = self._cross_validate(texts, labels)
+            self.evaluation_results.update(cv_results)
+            
             self._print_evaluation_report()
             
             return accuracy
         else:
             print("❌ Model training failed")
             return None
+    
+    def _cross_validate(self, texts, labels, cv_folds=5):
+        """Perform cross-validation untuk robust evaluation"""
+        print("🔍 Performing cross-validation...")
+        
+        try:
+            from sklearn.model_selection import cross_val_score
+            
+            # Create pipeline untuk cross-validation
+            from sklearn.pipeline import Pipeline
+            cv_pipeline = Pipeline([
+                ('tfidf', self.pipeline.classifier.vectorizer),
+                ('clf', self.pipeline.classifier.classifier)
+            ])
+            
+            # Perform cross-validation
+            cv_scores = cross_val_score(
+                cv_pipeline, texts, labels, 
+                cv=cv_folds, scoring='accuracy'
+            )
+            
+            return {
+                'cross_val_accuracy_mean': np.mean(cv_scores),
+                'cross_val_accuracy_std': np.std(cv_scores),
+                'cross_val_scores': cv_scores.tolist()
+            }
+            
+        except Exception as e:
+            print(f"⚠️ Cross-validation failed: {e}")
+            return {}
     
     def _print_evaluation_report(self):
         """Print comprehensive evaluation report"""
@@ -2121,6 +2434,8 @@ class ModelTrainer:
         
         print(f"🎯 ACCURACY METRICS:")
         print(f"   • Test Accuracy: {eval_results.get('accuracy', 0):.3f}")
+        if 'cross_val_accuracy_mean' in eval_results:
+            print(f"   • Cross-Val Accuracy: {eval_results['cross_val_accuracy_mean']:.3f} (±{eval_results['cross_val_accuracy_std']:.3f})")
         
         print(f"\n📊 DATASET INFO:")
         print(f"   • Total Samples: {eval_results.get('training_samples', 0) + eval_results.get('test_samples', 0)}")
@@ -2129,6 +2444,11 @@ class ModelTrainer:
         
         if 'class_distribution' in eval_results:
             print(f"   • Class Distribution: {eval_results['class_distribution']}")
+        
+        if 'cross_val_scores' in eval_results:
+            print(f"\n🔍 CROSS-VALIDATION DETAILS:")
+            for i, score in enumerate(eval_results['cross_val_scores']):
+                print(f"   • Fold {i+1}: {score:.3f}")
         
         # Model performance assessment
         accuracy = eval_results.get('accuracy', 0)
@@ -2157,6 +2477,93 @@ class ModelTrainer:
             print(f"   • Model needs improvement")
             print(f"   • Collect more labeled data")
             print(f"   • Review feature engineering")
+    
+    def analyze_model_confidence(self, results):
+        """Analyze model confidence pada real predictions"""
+        print("\n🔍 Analyzing model confidence on real data...")
+        
+        confident_predictions = 0
+        total_predictions = 0
+        confidence_scores = []
+        
+        for result in results:
+            if result['status'] == 'success':
+                total_predictions += 1
+                ml_confidence = result.get('ml_confidence', 0)
+                confidence_scores.append(ml_confidence)
+                
+                if ml_confidence > 0.7:  # High confidence threshold
+                    confident_predictions += 1
+        
+        if total_predictions > 0:
+            avg_confidence = np.mean(confidence_scores)
+            high_confidence_rate = confident_predictions / total_predictions
+            
+            print(f"   • Total Predictions: {total_predictions}")
+            print(f"   • High Confidence Predictions: {confident_predictions} ({high_confidence_rate*100:.1f}%)")
+            print(f"   • Average Confidence: {avg_confidence:.3f}")
+            print(f"   • Confidence Range: {np.min(confidence_scores):.3f} - {np.max(confidence_scores):.3f}")
+            
+            return {
+                'total_predictions': total_predictions,
+                'high_confidence_predictions': confident_predictions,
+                'high_confidence_rate': high_confidence_rate,
+                'avg_confidence': avg_confidence,
+                'confidence_scores': confidence_scores
+            }
+        
+        return {}
+
+    def save_model_report(self):
+        """Save model evaluation report ke file"""
+        try:
+            report_path = "output/model_evaluation_report.txt"
+            
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write("🤖 CHAT ANALYSIS MODEL EVALUATION REPORT\n")
+                f.write("=" * 50 + "\n\n")
+                
+                f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                
+                # Accuracy metrics
+                f.write("ACCURACY METRICS:\n")
+                f.write(f"- Test Accuracy: {self.evaluation_results.get('accuracy', 0):.3f}\n")
+                if 'cross_val_accuracy_mean' in self.evaluation_results:
+                    f.write(f"- Cross-Val Accuracy: {self.evaluation_results['cross_val_accuracy_mean']:.3f} (±{self.evaluation_results['cross_val_accuracy_std']:.3f})\n")
+                
+                # Dataset info
+                f.write(f"\nDATASET INFO:\n")
+                f.write(f"- Total Samples: {len(self.training_data)}\n")
+                f.write(f"- Training Samples: {self.evaluation_results.get('training_samples', 0)}\n")
+                f.write(f"- Test Samples: {self.evaluation_results.get('test_samples', 0)}\n")
+                f.write(f"- Class Distribution: {self.evaluation_results.get('class_distribution', {})}\n")
+                
+                # Model info
+                f.write(f"\nMODEL INFO:\n")
+                f.write(f"- Classifier: Logistic Regression\n")
+                f.write(f"- Vectorizer: TF-IDF\n")
+                f.write(f"- Features: {self.pipeline.classifier.vectorizer.max_features}\n")
+                
+                # Recommendations
+                accuracy = self.evaluation_results.get('accuracy', 0)
+                f.write(f"\nRECOMMENDATIONS:\n")
+                if accuracy >= 0.85:
+                    f.write("- ✅ Model ready for production use\n")
+                elif accuracy >= 0.7:
+                    f.write("- ⚠️ Model acceptable, consider more training data\n")
+                else:
+                    f.write("- ❌ Model needs improvement\n")
+            
+            print(f"💾 Model evaluation report saved: {report_path}")
+            
+        except Exception as e:
+            print(f"❌ Error saving model report: {e}")
+
+# Initialize Model Trainer
+model_trainer = ModelTrainer(pipeline)
+
+print("✅ Model Trainer Ready!")
+print("=" * 60)
 
 # Results Export & Visualization
 class ResultsExporter:
@@ -2188,100 +2595,94 @@ class ResultsExporter:
         print("✅ Enhanced Results Exporter Initialized")
     
     def export_comprehensive_results(self, results, stats, filename="comprehensive_analysis_results.xlsx"):
-        """Export COMPLETE results dengan semua data parse"""
+        """Export COMPLETE results dengan semua data parse - FIXED VERSION"""
         output_path = f"{self.output_dir}{filename}"
         
         print(f"💾 Exporting COMPREHENSIVE results to {output_path}...")
         
         try:
             with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-                # Sheet 1: Detailed Analysis Results
+                # Sheet 1: Detailed Analysis Results (LENGKAP)
                 self._create_comprehensive_detailed_sheet(writer, results)
                 
                 # Sheet 2: Q-A Pairs Raw Data
                 self._create_qa_pairs_sheet(writer, results)
                 
-                # Sheet 3: Summary Statistics
+                # Sheet 3: Main Issue Analysis Details  
+                self._create_main_issue_sheet(writer, results)
+                
+                # Sheet 4: Reply Analysis Details
+                self._create_reply_analysis_sheet(writer, results)
+                
+                # Sheet 5: Summary Statistics
                 self._create_summary_sheet(writer, stats)
+                
+                # Sheet 6: Performance Metrics
+                self._create_performance_sheet(writer, results)
+                
+                # Sheet 7: Lead Time Analysis
+                self._create_lead_time_sheet(writer, results)
+                
+                # Sheet 8: Quality Assessment
+                self._create_quality_sheet(writer, results)
+                
+                # Sheet 9: Lead Time Summary - BARU
+                self._create_lead_time_summary_sheet(writer, stats)
             
             print(f"✅ COMPREHENSIVE results exported: {output_path}")
             return output_path
             
         except Exception as e:
             print(f"❌ Error exporting comprehensive results: {e}")
+            # Fallback: create simple export
             return self._create_fallback_export(results, stats)
-
-    def _create_comprehensive_detailed_sheet(self, writer, results):
-        """Create DETAILED sheet dengan SEMUA data"""
-        detailed_data = []
         
-        for result in results:
-            if result['status'] == 'success':
-                row = {
-                    # BASIC INFO
-                    'Ticket_ID': result['ticket_id'],
-                    'Status': 'SUCCESS',
-                    'Analysis_Timestamp': result['analysis_timestamp'],
-                    
-                    # CONVERSATION INFO
-                    'Total_Messages': result['total_messages'],
-                    'Total_QA_Pairs': result['total_qa_pairs'],
-                    'Answered_Pairs': result['answered_pairs'],
-                    'Customer_Leave': result.get('customer_leave', False),
-                    'Follow_Up_Ticket': result.get('follow_up_ticket', ''),
-                    
-                    # MAIN ISSUE - LENGKAP
-                    'Main_Question': result['main_question'],
-                    'Main_Question_Time': result.get('main_question_time'),
-                    'Detected_Issue_Type': result.get('detected_issue_type', 'N/A'),
-                    'Final_Issue_Type': result['final_issue_type'],
-                    'Detection_Confidence': result['detection_confidence'],
-                    'ML_Prediction': result.get('ml_prediction', 'N/A'),
-                    'ML_Confidence': result.get('ml_confidence', 'N/A'),
-                    
-                    # FIRST REPLY - LENGKAP
-                    'First_Reply_Found': result['first_reply_found'],
-                    'First_Reply_Message': result.get('first_reply_message', ''),
-                    'First_Reply_Time': result.get('first_reply_time'),
-                    'First_Reply_Lead_Time_Min': result.get('first_reply_lead_time_minutes'),
-                    'First_Reply_Lead_Time_HHMMSS': result.get('first_reply_lead_time_hhmmss'),
-                    
-                    # FINAL REPLY - LENGKAP
-                    'Final_Reply_Found': result['final_reply_found'],
-                    'Final_Reply_Message': result.get('final_reply_message', ''),
-                    'Final_Reply_Time': result.get('final_reply_time'),
-                    'Final_Reply_Lead_Time_Min': result.get('final_reply_lead_time_minutes'),
-                    'Final_Reply_Lead_Time_HHMMSS': result.get('final_reply_lead_time_hhmmss'),
-                    'Customer_Leave_Note': result.get('customer_leave_note', ''),
-                    
-                    # PERFORMANCE METRICS
-                    'Performance_Rating': result['performance_rating'],
-                    'Quality_Rating': result['quality_rating'],
-                    'Quality_Score': result['quality_score'],
-                    
-                    # RECOMMENDATIONS
-                    'Recommendation': result['recommendation'],
-                    'Requirement_Compliant': result['requirement_compliant']
-                }
-            else:
-                row = {
-                    'Ticket_ID': result['ticket_id'],
-                    'Status': 'FAILED',
-                    'Failure_Reason': result['failure_reason'],
-                    'Analysis_Timestamp': result['analysis_timestamp']
-                }
-            
-            detailed_data.append(row)
+    def _create_lead_time_summary_sheet(self, writer, stats):
+        """Create lead time summary sheet - REQUIREMENT BARU"""
+        lead_time_data = [
+            ['LEAD TIME SUMMARY REPORT', '', '', ''],
+            ['Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '', ''],
+            ['', '', '', ''],
+            ['OVERALL LEAD TIME STATISTICS', 'First Reply', 'Final Reply', ''],
+            ['Average Lead Time (minutes)', 
+             f"{stats.get('overall_lead_times', {}).get('first_reply_avg_minutes', 0):.1f}",
+             f"{stats.get('overall_lead_times', {}).get('final_reply_avg_minutes', 0):.1f}", ''],
+            ['Median Lead Time (minutes)',
+             f"{stats.get('overall_lead_times', {}).get('first_reply_median_minutes', 0):.1f}", 
+             f"{stats.get('overall_lead_times', {}).get('final_reply_median_minutes', 0):.1f}", ''],
+            ['Number of Samples',
+             stats.get('overall_lead_times', {}).get('first_reply_samples', 0),
+             stats.get('overall_lead_times', {}).get('final_reply_samples', 0), ''],
+            ['', '', '', ''],
+            ['LEAD TIME BY ISSUE TYPE', 'First Reply Avg (min)', 'Final Reply Avg (min)', 'Samples']
+        ]
         
-        df_detailed = pd.DataFrame(detailed_data)
-        df_detailed.to_excel(writer, sheet_name='Detailed_Analysis', index=False)
+        if 'issue_type_lead_times' in stats:
+            for issue_type, lt_stats in stats['issue_type_lead_times'].items():
+                first_avg = lt_stats.get('first_reply_avg_minutes', 'N/A')
+                final_avg = lt_stats.get('final_reply_avg_minutes', 'N/A')
+                
+                first_str = f"{first_avg:.1f}" if first_avg != 'N/A' else 'N/A'
+                final_str = f"{final_avg:.1f}" if final_avg != 'N/A' else 'N/A'
+                samples_str = f"F:{lt_stats['first_reply_samples']} / R:{lt_stats['final_reply_samples']}"
+                
+                lead_time_data.append([
+                    issue_type.upper(),
+                    first_str,
+                    final_str,
+                    samples_str
+                ])
+        
+        lead_time_df = pd.DataFrame(lead_time_data)
+        lead_time_df.to_excel(writer, sheet_name='Lead_Time_Summary', index=False, header=False)
 
     def _create_qa_pairs_sheet(self, writer, results):
-        """Create sheet dengan RAW Q-A PAIRS data"""
+        """Create sheet dengan RAW Q-A PAIRS data - FIXED SORTING VERSION"""
         qa_pairs_data = []
         
         for result in results:
             if result['status'] == 'success' and '_raw_qa_pairs' in result:
+                # 🔥 FIX: URUTKAN Q-A PAIRS BERDASARKAN POSITION/WAKTU
                 sorted_qa_pairs = sorted(
                     result['_raw_qa_pairs'], 
                     key=lambda x: x.get('position', 0)
@@ -2301,25 +2702,205 @@ class ResultsExporter:
                         'Lead_Time_Seconds': qa_pair.get('lead_time_seconds'),
                         'Lead_Time_Minutes': qa_pair.get('lead_time_minutes'),
                         'Lead_Time_HHMMSS': qa_pair.get('lead_time_hhmmss'),
-                        'Position_Index': qa_pair.get('position', i)
+                        'Position_Index': qa_pair.get('position', i)  # Untuk debugging
                     })
         
         if qa_pairs_data:
+            # 🔥 FIX: URUTKAN DATA UNTUK EXCEL BERDASARKAN TICKET DAN WAKTU
             df_qa = pd.DataFrame(qa_pairs_data)
+            
+            # Urutkan berdasarkan Ticket_ID dan Question_Time
             df_qa = df_qa.sort_values(['Ticket_ID', 'Question_Time']).reset_index(drop=True)
+            
+            # Update QA_Pair_Index yang benar setelah sorting
             df_qa['QA_Pair_Index'] = df_qa.groupby('Ticket_ID').cumcount() + 1
+            
             df_qa.to_excel(writer, sheet_name='Raw_QA_Pairs', index=False)
             
             print(f"   ✅ Exported {len(df_qa)} Q-A pairs (sorted by time)")
         else:
+            # Create empty sheet jika tidak ada data
             empty_df = pd.DataFrame(['No Q-A pairs data available'])
             empty_df.to_excel(writer, sheet_name='Raw_QA_Pairs', index=False, header=False)
+
+    def _create_comprehensive_detailed_sheet(self, writer, results):
+        """Create DETAILED sheet dengan SEMUA data"""
+        detailed_data = []
+        
+        for result in results:
+            if result['status'] == 'success':
+                row = {
+                    # BASIC INFO
+                    'Ticket_ID': result['ticket_id'],
+                    'Status': 'SUCCESS',
+                    'Analysis_Timestamp': result['analysis_timestamp'],
+                    
+                    # CONVERSATION INFO
+                    'Total_Messages': result['total_messages'],
+                    'Total_QA_Pairs': result['total_qa_pairs'],
+                    'Answered_Pairs': result['answered_pairs'],
+                    'Conversation_Duration_Min': result.get('conversation_duration_minutes', 'N/A'),
+                    'Customer_Leave': result.get('customer_leave', False),
+                    'Follow_Up_Ticket': result.get('follow_up_ticket', ''),
+                    
+                    # MAIN ISSUE - LENGKAP
+                    'Main_Question': result['main_question'],
+                    'Main_Question_Time': result.get('main_question_time'),
+                    'Detected_Issue_Type': result.get('detected_issue_type', 'N/A'),
+                    'Final_Issue_Type': result['final_issue_type'],
+                    'Detection_Confidence': result['detection_confidence'],
+                    'ML_Prediction': result.get('ml_prediction', 'N/A'),
+                    'ML_Confidence': result.get('ml_confidence', 'N/A'),
+                    'Main_Issue_Reason': result.get('main_issue_reason', 'N/A'),
+                    
+                    # FIRST REPLY - LENGKAP
+                    'First_Reply_Found': result['first_reply_found'],
+                    'First_Reply_Message': result.get('first_reply_message', ''),
+                    'First_Reply_Time': result.get('first_reply_time'),
+                    'First_Reply_Lead_Time_Min': result.get('first_reply_lead_time_minutes'),
+                    'First_Reply_Lead_Time_HHMMSS': result.get('first_reply_lead_time_hhmmss'),
+                    
+                    # FINAL REPLY - LENGKAP
+                    'Final_Reply_Found': result['final_reply_found'],
+                    'Final_Reply_Message': result.get('final_reply_message', ''),
+                    'Final_Reply_Time': result.get('final_reply_time'),
+                    'Final_Reply_Lead_Time_Min': result.get('final_reply_lead_time_minutes'),
+                    'Final_Reply_Lead_Time_HHMMSS': result.get('final_reply_lead_time_hhmmss'),
+                    'Customer_Leave_Note': result.get('customer_leave_note', ''),
+                    
+                    # PERFORMANCE METRICS
+                    'Performance_Rating': result['performance_rating'],
+                    'Response_Efficiency': result.get('response_efficiency', 'N/A'),
+                    'Resolution_Efficiency': result.get('resolution_efficiency', 'N/A'),
+                    'Quality_Rating': result['quality_rating'],
+                    'Quality_Score': result['quality_score'],
+                    
+                    # THRESHOLD & RECOMMENDATIONS
+                    'Threshold_Violations': ', '.join(result['threshold_violations']) if result['threshold_violations'] else 'None',
+                    'Recommendation': result['recommendation'],
+                    'Missing_Elements': ', '.join(result['missing_elements']) if result['missing_elements'] else 'None'
+                }
+            else:
+                row = {
+                    'Ticket_ID': result['ticket_id'],
+                    'Status': 'FAILED',
+                    'Failure_Reason': result['failure_reason'],
+                    'Analysis_Timestamp': result['analysis_timestamp']
+                }
+            
+            detailed_data.append(row)
+        
+        df_detailed = pd.DataFrame(detailed_data)
+        df_detailed.to_excel(writer, sheet_name='Detailed_Analysis', index=False)
+        
+        # Auto-adjust column widths
+        worksheet = writer.sheets['Detailed_Analysis']
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+
+    def _create_main_issue_sheet(self, writer, results):
+        """Create sheet dengan MAIN ISSUE analysis details"""
+        main_issue_data = []
+        
+        for result in results:
+            if result['status'] == 'success' and '_raw_main_issue' in result:
+                main_issue = result['_raw_main_issue']
+                scoring_details = main_issue.get('scoring_details', {})
+                
+                main_issue_data.append({
+                    'Ticket_ID': result['ticket_id'],
+                    'Selected_Question': main_issue.get('question', ''),
+                    'Question_Time': main_issue.get('question_time'),
+                    'Issue_Type': main_issue.get('issue_type', ''),
+                    'Confidence_Score': main_issue.get('confidence_score', 0),
+                    'Selection_Reason': main_issue.get('selected_reason', ''),
+                    
+                    # SCORING DETAILS
+                    'Complaint_Keyword_Matches': scoring_details.get('complaint_matches', 0),
+                    'Serious_Keyword_Matches': scoring_details.get('serious_matches', 0),
+                    'Normal_Keyword_Matches': scoring_details.get('normal_matches', 0),
+                    'Is_Initial_Question': scoring_details.get('is_initial_question', False),
+                    'Is_Follow_Up': scoring_details.get('is_follow_up', False),
+                    
+                    # CANDIDATE COUNT
+                    'Total_Candidates': len(main_issue.get('all_candidates', [])),
+                    'Winning_Score': max([c.get('score', 0) for c in main_issue.get('all_candidates', [])]) if main_issue.get('all_candidates') else 0
+                })
+        
+        if main_issue_data:
+            df_main_issue = pd.DataFrame(main_issue_data)
+            df_main_issue.to_excel(writer, sheet_name='Main_Issue_Details', index=False)
+        else:
+            empty_df = pd.DataFrame(['No main issue details available'])
+            empty_df.to_excel(writer, sheet_name='Main_Issue_Details', index=False, header=False)
+
+    def _create_reply_analysis_sheet(self, writer, results):
+        """Create sheet dengan REPLY ANALYSIS details"""
+        reply_analysis_data = []
+        
+        for result in results:
+            if result['status'] == 'success' and '_raw_reply_analysis' in result:
+                reply_analysis = result['_raw_reply_analysis']
+                lead_times = reply_analysis.get('lead_times', {})
+                threshold_checks = reply_analysis.get('threshold_checks', {})
+                quality_assessment = reply_analysis.get('quality_assessment', {})
+                reply_validation = reply_analysis.get('reply_validation', {})
+                performance_analysis = reply_analysis.get('performance_analysis', {})
+                
+                reply_analysis_data.append({
+                    'Ticket_ID': result['ticket_id'],
+                    'Issue_Type': reply_analysis.get('issue_type', ''),
+                    
+                    # LEAD TIMES DETAILS
+                    'First_Reply_Lead_Time_Seconds': lead_times.get('first_reply_lead_time_seconds'),
+                    'Final_Reply_Lead_Time_Seconds': lead_times.get('final_reply_lead_time_seconds'),
+                    'Conversation_Duration_Seconds': lead_times.get('conversation_duration_seconds'),
+                    
+                    # THRESHOLD CHECKS
+                    'Threshold_Violations_Count': len([v for v in threshold_checks.values() if v is True]),
+                    'Specific_Threshold_Violations': ', '.join([k for k, v in threshold_checks.items() if v is True]),
+                    
+                    # QUALITY ASSESSMENT
+                    'First_Reply_Quality': quality_assessment.get('first_reply_quality', 'unknown'),
+                    'Final_Reply_Quality': quality_assessment.get('final_reply_quality', 'unknown'),
+                    'Overall_Quality': quality_assessment.get('overall_quality', 'unknown'),
+                    
+                    # REPLY VALIDATION
+                    'First_Reply_Found': reply_validation.get('first_reply_found', False),
+                    'Final_Reply_Found': reply_validation.get('final_reply_found', False),
+                    'Validation_Quality_Score': reply_validation.get('quality_score', 0),
+                    'Validation_Quality_Rating': reply_validation.get('quality_rating', 'poor'),
+                    'Missing_Elements': ', '.join(reply_validation.get('missing_elements', [])),
+                    'Validation_Recommendation': reply_validation.get('recommendation', ''),
+                    
+                    # PERFORMANCE ANALYSIS
+                    'Performance_Rating': performance_analysis.get('performance_rating', 'unknown'),
+                    'Response_Efficiency': performance_analysis.get('response_efficiency', 'unknown'),
+                    'Resolution_Efficiency': performance_analysis.get('resolution_efficiency', 'unknown')
+                })
+        
+        if reply_analysis_data:
+            df_reply = pd.DataFrame(reply_analysis_data)
+            df_reply.to_excel(writer, sheet_name='Reply_Analysis_Details', index=False)
+        else:
+            empty_df = pd.DataFrame(['No reply analysis details available'])
+            empty_df.to_excel(writer, sheet_name='Reply_Analysis_Details', index=False, header=False)
 
     def _create_summary_sheet(self, writer, stats):
         """Create summary statistics sheet"""
         summary_data = [
-            ['COMPREHENSIVE ANALYSIS SUMMARY', ''],
+            ['COMPREHENSIVE ANALYSIS SUMMARY - ALL DATA EXPORTED', ''],
             ['Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ['Total Sheets in this File', '8 Sheets: Detailed, QA-Pairs, Main-Issue, Reply-Analysis, Summary, Performance, Lead-Time, Quality'],
             ['', ''],
             ['OVERALL STATISTICS', ''],
             ['Total Tickets Processed', stats['total_tickets']],
@@ -2329,43 +2910,297 @@ class ResultsExporter:
             ['Analysis Duration', f"{stats['analysis_duration_seconds']:.1f} seconds"],
             ['Average Time per Ticket', f"{stats['avg_analysis_time_per_ticket']:.2f} seconds"],
             ['', ''],
-            ['LEAD TIME SUMMARY', 'First Reply', 'Final Reply']
+            ['DATA COMPLETENESS', ''],
+            ['Total Q-A Pairs Extracted', 'See Raw_QA_Pairs sheet'],
+            ['Total Main Issues Identified', 'See Main_Issue_Details sheet'], 
+            ['Total Reply Analyses', 'See Reply_Analysis_Details sheet'],
+            ['', ''],
+            ['EXPORT NOTES', ''],
+            ['Sheet 1 - Detailed_Analysis', 'Main results dengan semua field'],
+            ['Sheet 2 - Raw_QA_Pairs', 'SEMUA Q-A pairs yang berhasil di-parse'],
+            ['Sheet 3 - Main_Issue_Details', 'Detail scoring dan selection main issue'],
+            ['Sheet 4 - Reply_Analysis_Details', 'Detail analisis reply dan lead times'],
+            ['Sheet 5 - Summary_Statistics', 'Statistik aggregate'],
+            ['Sheet 6 - Performance_Metrics', 'Performance metrics per ticket'],
+            ['Sheet 7 - Lead_Time_Analysis', 'Analisis lead time detail'],
+            ['Sheet 8 - Quality_Assessment', 'Assesment kualitas conversation']
         ]
         
-        # Add lead time summary
-        if 'overall_lead_times' in stats:
-            overall_lt = stats['overall_lead_times']
-            summary_data.extend([
-                ['Average Lead Time (minutes)', 
-                 f"{overall_lt.get('first_reply_avg_minutes', 0):.1f}", 
-                 f"{overall_lt.get('final_reply_avg_minutes', 0):.1f}"],
-                ['Number of Samples', 
-                 overall_lt.get('first_reply_samples', 0), 
-                 overall_lt.get('final_reply_samples', 0)]
-            ])
-        
-        summary_data.extend([
-            ['', '', ''],
-            ['ISSUE TYPE DISTRIBUTION', 'Count', 'Percentage']
-        ])
-        
+        # Tambahkan statistik biasa
         if 'issue_type_distribution' in stats:
+            summary_data.extend([['', ''], ['ISSUE TYPE DISTRIBUTION', '']])
             for issue_type, count in stats['issue_type_distribution'].items():
-                percentage = (count / stats.get('successful_analysis', 1)) * 100
-                summary_data.append([issue_type.title(), count, f"{percentage:.1f}%"])
-        
-        summary_data.extend([
-            ['', '', ''],
-            ['PERFORMANCE DISTRIBUTION', 'Count', 'Percentage']
-        ])
+                percentage = (count / stats['successful_analysis']) * 100
+                summary_data.append([f'{issue_type.title()} Issues', f'{count} ({percentage:.1f}%)'])
         
         if 'performance_distribution' in stats:
+            summary_data.extend([['', ''], ['PERFORMANCE DISTRIBUTION', '']])
             for rating, count in stats['performance_distribution'].items():
-                percentage = (count / stats.get('successful_analysis', 1)) * 100
-                summary_data.append([rating.upper(), count, f"{percentage:.1f}%"])
+                percentage = (count / stats['successful_analysis']) * 100
+                summary_data.append([f'{rating.upper()} Performance', f'{count} ({percentage:.1f}%)'])
         
-        summary_df = pd.DataFrame(summary_data, columns=['Metric', 'Value', 'Value2'])
+        if 'lead_time_stats' in stats:
+            lt_stats = stats['lead_time_stats']
+            summary_data.extend([['', ''], ['LEAD TIME STATISTICS', '']])
+            summary_data.extend([
+                ['Average Lead Time', f"{lt_stats['avg_lead_time_minutes']:.2f} minutes"],
+                ['Median Lead Time', f"{lt_stats['median_lead_time_minutes']:.2f} minutes"],
+                ['Minimum Lead Time', f"{lt_stats['min_lead_time_minutes']:.2f} minutes"],
+                ['Maximum Lead Time', f"{lt_stats['max_lead_time_minutes']:.2f} minutes"],
+                ['Standard Deviation', f"{lt_stats['std_lead_time_minutes']:.2f} minutes"]
+            ])
+        
+        summary_df = pd.DataFrame(summary_data, columns=['Metric', 'Value'])
         summary_df.to_excel(writer, sheet_name='Summary_Statistics', index=False)
+
+    def _create_performance_sheet(self, writer, results):
+        """Create performance metrics sheet"""
+        successful = [r for r in results if r['status'] == 'success']
+        
+        perf_data = []
+        for result in successful:
+            perf_data.append({
+                'Ticket_ID': result['ticket_id'],
+                'Issue_Type': result['final_issue_type'],
+                'Performance_Rating': result['performance_rating'],
+                'Response_Efficiency': result.get('response_efficiency', 'N/A'),
+                'Resolution_Efficiency': result.get('resolution_efficiency', 'N/A'),
+                'First_Reply_Lead_Time_Min': result.get('first_reply_lead_time_minutes'),
+                'Final_Reply_Lead_Time_Min': result.get('final_reply_lead_time_minutes'),
+                'Threshold_Violations_Count': len(result['threshold_violations']),
+                'Specific_Violations': ', '.join(result['threshold_violations']) if result['threshold_violations'] else 'None'
+            })
+        
+        df_perf = pd.DataFrame(perf_data)
+        df_perf.to_excel(writer, sheet_name='Performance_Metrics', index=False)
+
+    def _create_lead_time_sheet(self, writer, results):
+        """Create lead time analysis sheet"""
+        successful = [r for r in results if r['status'] == 'success' and r.get('final_reply_lead_time_minutes')]
+        
+        lead_time_data = []
+        for result in successful:
+            lead_time_data.append({
+                'Ticket_ID': result['ticket_id'],
+                'Issue_Type': result['final_issue_type'],
+                'Final_Reply_Lead_Time_Min': result['final_reply_lead_time_minutes'],
+                'First_Reply_Lead_Time_Min': result.get('first_reply_lead_time_minutes', 'N/A'),
+                'Conversation_Duration_Min': result.get('conversation_duration_minutes', 'N/A'),
+                'Performance_Rating': result['performance_rating'],
+                'Within_Threshold': 'Yes' if not result['threshold_violations'] else 'No'
+            })
+        
+        df_lead = pd.DataFrame(lead_time_data)
+        df_lead.to_excel(writer, sheet_name='Lead_Time_Analysis', index=False)
+
+    def _create_quality_sheet(self, writer, results):
+        """Create quality assessment sheet"""
+        successful = [r for r in results if r['status'] == 'success']
+        
+        quality_data = []
+        for result in successful:
+            quality_data.append({
+                'Ticket_ID': result['ticket_id'],
+                'Issue_Type': result['final_issue_type'],
+                'Quality_Rating': result['quality_rating'],
+                'Quality_Score': result['quality_score'],
+                'First_Reply_Found': 'Yes' if result['first_reply_found'] else 'No',
+                'Final_Reply_Found': 'Yes' if result['final_reply_found'] else 'No',
+                'Missing_Elements': ', '.join(result['missing_elements']) if result['missing_elements'] else 'None',
+                'Recommendation': result['recommendation']
+            })
+        
+        df_quality = pd.DataFrame(quality_data)
+        df_quality.to_excel(writer, sheet_name='Quality_Assessment', index=False)
+
+    def create_comprehensive_visualizations(self, results, stats):
+        """Create comprehensive visualizations dashboard dengan lead time analysis"""
+        print("📊 Creating comprehensive visualizations...")
+        
+        successful = [r for r in results if r['status'] == 'success']
+        
+        if not successful:
+            print("❌ No successful analyses to visualize")
+            return
+        
+        # Create figure dengan multiple subplots
+        fig = plt.figure(figsize=(20, 18))
+        fig.suptitle('Chat Analysis Dashboard - Comprehensive Overview', fontsize=16, fontweight='bold')
+        
+        # Define grid layout
+        import matplotlib.gridspec as gridspec
+        gs = gridspec.GridSpec(4, 3, figure=fig)
+        
+        # Plot 1: Issue Type Distribution
+        ax1 = fig.add_subplot(gs[0, 0])
+        self._plot_issue_type_distribution(ax1, stats)
+        
+        # Plot 2: Performance Rating Distribution
+        ax2 = fig.add_subplot(gs[0, 1])
+        self._plot_performance_distribution(ax2, stats)
+        
+        # Plot 3: Lead Time Distribution
+        ax3 = fig.add_subplot(gs[0, 2])
+        self._plot_lead_time_distribution(ax3, successful)
+        
+        # Plot 4: Quality Score Distribution
+        ax4 = fig.add_subplot(gs[1, 0])
+        self._plot_quality_distribution(ax4, successful)
+        
+        # Plot 5: Reply Effectiveness
+        ax5 = fig.add_subplot(gs[1, 1])
+        self._plot_reply_effectiveness(ax5, stats)
+        
+        # Plot 6: Lead Time by Issue Type - PLOT BARU
+        ax6 = fig.add_subplot(gs[1, 2])
+        self._plot_lead_time_comparison(ax6, stats)
+        
+        # Plot 7: Customer Leave & Follow-up Cases
+        ax7 = fig.add_subplot(gs[2, 0])
+        self._plot_special_cases(ax7, stats)
+        
+        # Plot 8: Lead Time by Issue Type (Box Plot)
+        ax8 = fig.add_subplot(gs[2, 1:])
+        self._plot_lead_time_by_issue_type(ax8, successful)
+        
+        # Plot 9: Performance by Issue Type
+        ax9 = fig.add_subplot(gs[3, :])
+        self._plot_performance_by_issue_type(ax9, successful)
+        
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.93)
+        
+        # Save dashboard
+        dashboard_path = f"{self.visualizations_dir}analysis_dashboard.png"
+        plt.savefig(dashboard_path, dpi=300, bbox_inches='tight')
+        plt.show()
+        
+        print(f"✅ Visualizations saved: {dashboard_path}")
+        
+        # Create additional individual charts
+        self._create_individual_charts(successful, stats)
+
+    def _plot_lead_time_comparison(self, ax, stats):
+        """Plot perbandingan lead time first vs final reply"""
+        if 'overall_lead_times' not in stats:
+            ax.text(0.5, 0.5, 'No lead time data', ha='center', va='center')
+            return
+        
+        overall_lt = stats['overall_lead_times']
+        
+        categories = ['First Reply', 'Final Reply']
+        times = [overall_lt['first_reply_avg_minutes'], overall_lt['final_reply_avg_minutes']]
+        samples = [overall_lt['first_reply_samples'], overall_lt['final_reply_samples']]
+        
+        bars = ax.bar(categories, times, color=['#2E86AB', '#A23B72'])
+        ax.set_title('Average Lead Time: First vs Final Reply', fontweight='bold')
+        ax.set_ylabel('Average Lead Time (minutes)')
+        
+        # Add value labels on bars
+        for i, (bar, time_val, sample) in enumerate(zip(bars, times, samples)):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                   f'{time_val:.1f} min\n(n={sample})', 
+                   ha='center', va='bottom', fontsize=9)
+
+    def _plot_special_cases(self, ax, stats):
+        """Plot special cases: customer leave dan follow-up"""
+        if 'reply_effectiveness' not in stats:
+            ax.text(0.5, 0.5, 'No special cases data', ha='center', va='center')
+            return
+        
+        eff = stats['reply_effectiveness']
+        
+        categories = ['Customer Leave', 'Follow-up Cases']
+        counts = [eff['customer_leave_cases'], eff['follow_up_cases']]
+        
+        bars = ax.bar(categories, counts, color=['#F18F01', '#A23B72'])
+        ax.set_title('Special Conversation Cases', fontweight='bold')
+        ax.set_ylabel('Number of Cases')
+        
+        # Add value labels
+        for bar, count in zip(bars, counts):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{int(count)}', ha='center', va='bottom')
+
+    def _plot_lead_time_by_issue_type(self, ax, successful):
+        """Plot lead time distribution by issue type"""
+        issue_data = {}
+        
+        for result in successful:
+            issue_type = result['final_issue_type']
+            first_lt = result.get('first_reply_lead_time_minutes')
+            final_lt = result.get('final_reply_lead_time_minutes')
+            
+            if issue_type not in issue_data:
+                issue_data[issue_type] = {
+                    'first_reply_times': [],
+                    'final_reply_times': []
+                }
+            
+            if first_lt is not None:
+                issue_data[issue_type]['first_reply_times'].append(first_lt)
+            if final_lt is not None:
+                issue_data[issue_type]['final_reply_times'].append(final_lt)
+        
+        if not issue_data:
+            ax.text(0.5, 0.5, 'No lead time data by issue type', ha='center', va='center')
+            return
+        
+        # Prepare data untuk grouped bar chart
+        labels = list(issue_data.keys())
+        first_means = [np.mean(data['first_reply_times']) if data['first_reply_times'] else 0 for data in issue_data.values()]
+        final_means = [np.mean(data['final_reply_times']) if data['final_reply_times'] else 0 for data in issue_data.values()]
+        
+        x = np.arange(len(labels))
+        width = 0.35
+        
+        bars1 = ax.bar(x - width/2, first_means, width, label='First Reply', color='#2E86AB')
+        bars2 = ax.bar(x + width/2, final_means, width, label='Final Reply', color='#A23B72')
+        
+        ax.set_title('Average Lead Time by Issue Type', fontweight='bold')
+        ax.set_ylabel('Average Lead Time (minutes)')
+        ax.set_xticks(x)
+        ax.set_xticklabels([label.upper() for label in labels])
+        ax.legend()
+        
+        # Add value labels
+        for bars in [bars1, bars2]:
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{height:.1f}', ha='center', va='bottom', fontsize=8)
+
+    def _plot_performance_by_issue_type(self, ax, successful):
+        """Plot performance rating by issue type"""
+        performance_by_type = {}
+        for result in successful:
+            issue_type = result['final_issue_type']
+            performance = result['performance_rating']
+            if issue_type not in performance_by_type:
+                performance_by_type[issue_type] = []
+            performance_by_type[issue_type].append(performance)
+        
+        # Convert to counts
+        plot_data = {}
+        for issue_type, performances in performance_by_type.items():
+            plot_data[issue_type] = Counter(performances)
+        
+        # Create stacked bar chart
+        ratings = ['excellent', 'good', 'fair', 'poor']
+        bottom = np.zeros(len(plot_data))
+        
+        for i, rating in enumerate(ratings):
+            counts = [plot_data[issue_type].get(rating, 0) for issue_type in plot_data.keys()]
+            ax.bar(plot_data.keys(), counts, bottom=bottom, label=rating.capitalize(), 
+                  color=self.performance_colors.get(rating, '#999999'))
+            bottom += counts
+        
+        ax.set_title('Performance Rating by Issue Type', fontweight='bold')
+        ax.set_ylabel('Number of Tickets')
+        ax.legend()
+        plt.xticks(rotation=45)
 
     def _create_fallback_export(self, results, stats):
         """Create fallback export jika export utama gagal"""
@@ -2393,15 +3228,365 @@ class ResultsExporter:
             print(f"❌ Fallback export also failed: {e}")
             return None
 
-# Initialize Fixed Pipeline
-pipeline = CompleteAnalysisPipeline()
+    def _plot_issue_type_distribution(self, ax, stats):
+        """Plot issue type distribution"""
+        if 'issue_type_distribution' not in stats:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center')
+            return
+        
+        types = list(stats['issue_type_distribution'].keys())
+        counts = list(stats['issue_type_distribution'].values())
+        colors = [self.colors.get(t, '#999999') for t in types]
+        
+        ax.pie(counts, labels=types, autopct='%1.1f%%', colors=colors, startangle=90)
+        ax.set_title('Issue Type Distribution', fontweight='bold')
+    
+    def _plot_performance_distribution(self, ax, stats):
+        """Plot performance rating distribution"""
+        if 'performance_distribution' not in stats:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center')
+            return
+        
+        ratings = list(stats['performance_distribution'].keys())
+        counts = list(stats['performance_distribution'].values())
+        colors = [self.performance_colors.get(r, '#999999') for r in ratings]
+        
+        bars = ax.bar(ratings, counts, color=colors)
+        ax.set_title('Performance Rating Distribution', fontweight='bold')
+        ax.set_ylabel('Number of Tickets')
+        
+        # Add value labels on bars
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{int(height)}', ha='center', va='bottom')
+    
+    def _plot_lead_time_distribution(self, ax, successful):
+        """Plot lead time distribution"""
+        lead_times = [r.get('final_reply_lead_time_minutes', 0) for r in successful 
+                     if r.get('final_reply_lead_time_minutes') is not None]
+        
+        if not lead_times:
+            ax.text(0.5, 0.5, 'No lead time data', ha='center', va='center')
+            return
+        
+        ax.hist(lead_times, bins=15, alpha=0.7, color='#2E86AB', edgecolor='black')
+        ax.set_title('Final Reply Lead Time Distribution', fontweight='bold')
+        ax.set_xlabel('Lead Time (minutes)')
+        ax.set_ylabel('Frequency')
+        
+        # Add statistics
+        avg_lt = np.mean(lead_times)
+        ax.axvline(avg_lt, color='red', linestyle='--', label=f'Average: {avg_lt:.1f} min')
+        ax.legend()
+    
+    def _plot_quality_distribution(self, ax, successful):
+        """Plot quality score distribution"""
+        quality_scores = [r.get('quality_score', 0) for r in successful]
+        
+        ax.hist(quality_scores, bins=range(0, 8), alpha=0.7, color='#F18F01', edgecolor='black')
+        ax.set_title('Quality Score Distribution', fontweight='bold')
+        ax.set_xlabel('Quality Score (0-6)')
+        ax.set_ylabel('Number of Tickets')
+        ax.set_xticks(range(0, 7))
+    
+    def _plot_reply_effectiveness(self, ax, stats):
+        """Plot reply effectiveness metrics"""
+        if 'reply_effectiveness' not in stats:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center')
+            return
+        
+        eff = stats['reply_effectiveness']
+        metrics = ['First Reply\nFound', 'Final Reply\nFound', 'Both Replies\nFound']
+        rates = [eff['first_reply_found_rate'] * 100, 
+                eff['final_reply_found_rate'] * 100,
+                eff['both_replies_found_rate'] * 100]
+        
+        bars = ax.bar(metrics, rates, color=['#2E86AB', '#A23B72', '#F18F01'])
+        ax.set_title('Reply Effectiveness Rates', fontweight='bold')
+        ax.set_ylabel('Rate (%)')
+        ax.set_ylim(0, 100)
+        
+        # Add percentage labels
+        for bar, rate in zip(bars, rates):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 1,
+                   f'{rate:.1f}%', ha='center', va='bottom')
+    
+    def _plot_threshold_violations(self, ax, stats):
+        """Plot threshold violations"""
+        if 'threshold_violations' not in stats or not stats['threshold_violations']:
+            ax.text(0.5, 0.5, 'No threshold violations', ha='center', va='center', fontweight='bold')
+            return
+        
+        violations = list(stats['threshold_violations'].keys())
+        counts = list(stats['threshold_violations'].values())
+        
+        bars = ax.bar(violations, counts, color='#C73E1D')
+        ax.set_title('Threshold Violations', fontweight='bold')
+        ax.set_ylabel('Number of Occurrences')
+        plt.xticks(rotation=45, ha='right')
+        
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{int(height)}', ha='center', va='bottom')
+    
+    def _plot_lead_time_by_issue_type(self, ax, successful):
+        """Plot lead time by issue type"""
+        issue_data = {}
+        for result in successful:
+            issue_type = result['final_issue_type']
+            lead_time = result.get('final_reply_lead_time_minutes')
+            if lead_time is not None:
+                if issue_type not in issue_data:
+                    issue_data[issue_type] = []
+                issue_data[issue_type].append(lead_time)
+        
+        if not issue_data:
+            ax.text(0.5, 0.5, 'No lead time data by issue type', ha='center', va='center')
+            return
+        
+        # Prepare data for box plot
+        labels = list(issue_data.keys())
+        data = [issue_data[label] for label in labels]
+        colors = [self.colors.get(label, '#999999') for label in labels]
+        
+        box_plot = ax.boxplot(data, labels=labels, patch_artist=True)
+        
+        # Color the boxes
+        for patch, color in zip(box_plot['boxes'], colors):
+            patch.set_facecolor(color)
+        
+        ax.set_title('Lead Time Distribution by Issue Type', fontweight='bold')
+        ax.set_ylabel('Lead Time (minutes)')
+        ax.grid(True, alpha=0.3)
+    
+    def _create_individual_charts(self, successful, stats):
+        """Create additional individual charts"""
+        # 1. Performance by Issue Type
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        performance_by_type = {}
+        for result in successful:
+            issue_type = result['final_issue_type']
+            performance = result['performance_rating']
+            if issue_type not in performance_by_type:
+                performance_by_type[issue_type] = []
+            performance_by_type[issue_type].append(performance)
+        
+        # Convert to counts
+        plot_data = {}
+        for issue_type, performances in performance_by_type.items():
+            plot_data[issue_type] = Counter(performances)
+        
+        # Create stacked bar chart
+        ratings = ['excellent', 'good', 'fair', 'poor']
+        bottom = np.zeros(len(plot_data))
+        
+        for i, rating in enumerate(ratings):
+            counts = [plot_data[issue_type].get(rating, 0) for issue_type in plot_data.keys()]
+            ax.bar(plot_data.keys(), counts, bottom=bottom, label=rating.capitalize(), 
+                  color=self.performance_colors.get(rating, '#999999'))
+            bottom += counts
+        
+        ax.set_title('Performance Rating by Issue Type', fontweight='bold')
+        ax.set_ylabel('Number of Tickets')
+        ax.legend()
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig(f"{self.visualizations_dir}performance_by_issue_type.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"✅ Individual charts created in {self.visualizations_dir}")
 
-print("✅ FULLY FIXED Complete Analysis Pipeline Ready!")
-print("   ✓ All raw data preserved for export")
-print("   ✓ Enhanced statistics tracking")
-print("   ✓ Customer leave detection")
-print("   ✓ Flexible reply analysis logic")
+# Initialize Enhanced Results Exporter
+exporter = ResultsExporter()
+
+print("✅ ENHANCED Results Exporter & Visualizer Ready!")
+print("   ✓ 9 Sheets Excel Export")
+print("   ✓ Complete Q-A Pairs Data") 
+print("   ✓ Main Issue Scoring Details")
+print("   ✓ Reply Analysis Details")
+print("   ✓ Lead Time Summary Sheets")
 print("=" * 60)
+
+# DEBUG HELPER FUNCTIONS
+def debug_problematic_tickets():
+    """Debug khusus untuk ticket yang bermasalah"""
+    if raw_df is None:
+        return
+    
+    problematic_tickets = ['18ea89910d0d8eac44aecca81d779e3a', '9842cd7eee5451283f8430fb83469940']
+    
+    print("🐛 DETAILED DEBUG FOR PROBLEMATIC TICKETS")
+    print("=" * 60)
+    
+    parser = ConversationParser()
+    for ticket_id in problematic_tickets:
+        print(f"\n🔍 DEBUG TICKET: {ticket_id}")
+        ticket_df = raw_df[raw_df['Ticket Number'] == ticket_id].sort_values('parsed_timestamp')
+        
+        # Show ALL messages setelah conversation start
+        conversation_start = parser.detect_conversation_start(ticket_df)
+        
+        if conversation_start:
+            filtered_df = parser._filter_bot_messages(ticket_df)
+            filtered_df = filtered_df[filtered_df['parsed_timestamp'] >= conversation_start]
+            
+            print(f"📋 ALL MESSAGES AFTER CONVERSATION START ({len(filtered_df)} messages):")
+            for idx, row in filtered_df.iterrows():
+                role = row['Role']
+                message = str(row['Message'])[:80]
+                timestamp = row['parsed_timestamp']
+                is_meaningful = parser._is_meaningful_message(message)
+                meaningful_flag = "✅" if is_meaningful else "❌"
+                
+                print(f"   {meaningful_flag} {timestamp} | {role:15} | {message}...")
+            
+            # Analyze why no Q-A pairs
+            print(f"\n🔎 ANALYSIS:")
+            customer_msgs = filtered_df[filtered_df['Role'].str.lower().str.contains('customer', na=False)]
+            operator_msgs = filtered_df[filtered_df['Role'].str.lower().str.contains('operator|agent', na=False)]
+            
+            print(f"   • Customer messages: {len(customer_msgs)}")
+            print(f"   • Operator messages: {len(operator_msgs)}")
+            
+            meaningful_customer = [msg for msg in customer_msgs['Message'] if parser._is_meaningful_message(str(msg))]
+            print(f"   • Meaningful customer messages: {len(meaningful_customer)}")
+            
+            if len(meaningful_customer) == 0:
+                print("   ❌ REASON: No meaningful customer questions after operator greeting")
+            elif len(operator_msgs) == 0:
+                print("   ❌ REASON: No operator responses after customer questions")
+            else:
+                print("   ❌ REASON: Timing/sequence issues in Q-A matching")
+
+def debug_timestamp_issues(results):
+    """Debug function untuk investigasi timestamp issues"""
+    print("\n🐛 DEBUG TIMESTAMP ISSUES")
+    print("=" * 50)
+    
+    problematic_tickets = []
+    
+    for result in results:
+        if result['status'] == 'success':
+            first_lt = result.get('first_reply_lead_time_minutes')
+            final_lt = result.get('final_reply_lead_time_minutes')
+            
+            # Cari tickets dengan lead time negatif
+            if (first_lt is not None and first_lt < 0) or (final_lt is not None and final_lt < 0):
+                problematic_tickets.append({
+                    'ticket_id': result['ticket_id'],
+                    'main_question': result['main_question'][:50] + '...',
+                    'main_question_time': result.get('main_question_time'),
+                    'first_reply_time': result.get('first_reply_time'),
+                    'final_reply_time': result.get('final_reply_time'),
+                    'first_lead_time': first_lt,
+                    'final_lead_time': final_lt
+                })
+    
+    if problematic_tickets:
+        print(f"❌ Found {len(problematic_tickets)} tickets with negative lead times")
+        for ticket in problematic_tickets:
+            print(f"   🎫 {ticket['ticket_id']}:")
+            print(f"      First LT: {ticket['first_lead_time']} min")
+            print(f"      Final LT: {ticket['final_lead_time']} min")
+    else:
+        print("✅ No timestamp issues found")
+
+def debug_follow_up_analysis(results, customer_info):
+    """Debug follow-up ticket analysis"""
+    print("\n🐛 DEBUG FOLLOW-UP ANALYSIS")
+    print("=" * 50)
+    
+    follow_up_cases = [r for r in results if r.get('follow_up_ticket')]
+    customer_leave_cases = [r for r in results if r.get('customer_leave')]
+    
+    print(f"📊 Follow-up Cases: {len(follow_up_cases)}")
+    print(f"📊 Customer Leave Cases: {len(customer_leave_cases)}")
+    
+    for case in follow_up_cases[:3]:  # Show first 3 cases
+        print(f"\n🔍 Follow-up Case:")
+        print(f"   Original Ticket: {case['ticket_id']}")
+        print(f"   Follow-up Ticket: {case['follow_up_ticket']}")
+        print(f"   Issue Type: {case['final_issue_type']}")
+        print(f"   Main Question: {case['main_question'][:80]}...")
+
+def debug_ticket_analysis(ticket_id, df):
+    """Debug detailed analysis untuk ticket tertentu"""
+    print(f"\n🔍 DEBUG TICKET: {ticket_id}")
+    print("=" * 60)
+    
+    ticket_df = df[df['Ticket Number'] == ticket_id].sort_values('parsed_timestamp')
+    
+    # Show semua messages
+    print("📋 ALL MESSAGES:")
+    for idx, row in ticket_df.iterrows():
+        role = row['Role']
+        message = str(row['Message'])[:100]
+        timestamp = row['parsed_timestamp']
+        print(f"   {idx:2d} | {timestamp} | {role:15} | {message}...")
+    
+    # Parse conversation
+    parser = ConversationParser()
+    qa_pairs = parser.parse_conversation(ticket_df)
+    
+    print(f"\n📊 Q-A PAIRS FOUND: {len(qa_pairs)}")
+    for i, pair in enumerate(qa_pairs):
+        status = "✅ ANSWERED" if pair['is_answered'] else "❌ UNANSWERED"
+        print(f"\n{i+1}. {status}")
+        print(f"   Q: {pair['question'][:100]}...")
+        if pair['is_answered']:
+            print(f"   A: {pair['answer'][:100]}...")
+            print(f"   Lead Time: {pair.get('lead_time_minutes', 'N/A')} min")
+    
+    # Analyze replies
+    if qa_pairs:
+        issue_detector = MainIssueDetector()
+        main_issue = issue_detector.detect_main_issue(qa_pairs)
+        
+        if main_issue:
+            print(f"\n🎯 MAIN ISSUE: {main_issue['issue_type']}")
+            print(f"   Question: {main_issue['question'][:100]}...")
+            
+            reply_analyzer = ReplyAnalyzer()
+            first_reply, final_reply, analysis = reply_analyzer.analyze_replies(qa_pairs, main_issue['issue_type'])
+            
+            print(f"\n🔍 REPLY ANALYSIS:")
+            print(f"   First Reply Found: {analysis['reply_validation']['first_reply_found']}")
+            print(f"   Final Reply Found: {analysis['reply_validation']['final_reply_found']}")
+            print(f"   Requirement Compliant: {analysis['requirement_compliant']}")
+
+# Test dengan sample data
+if __name__ == "__main__":
+    print("🧪 TESTING ENHANCED PIPELINE...")
+    
+    # Test preprocessor
+    preprocessor = DataPreprocessor()
+    raw_df = preprocessor.load_raw_data(config.RAW_DATA_PATH)
+    
+    if raw_df is not None:
+        print(f"📊 Data preview:")
+        print(f"   Columns: {list(raw_df.columns)}")
+        print(f"   Shape: {raw_df.shape}")
+        print(f"   Ticket count: {raw_df['Ticket Number'].nunique()}")
+        
+        # Test dengan sample tickets
+        sample_tickets = raw_df['Ticket Number'].unique()[:3]
+        print(f"\n🔍 Testing with {len(sample_tickets)} sample tickets...")
+        
+        for ticket_id in sample_tickets:
+            ticket_df = raw_df[raw_df['Ticket Number'] == ticket_id]
+            result = pipeline.analyze_single_ticket(ticket_df, ticket_id)
+            
+            if result['status'] == 'success':
+                print(f"   ✅ {ticket_id}: {result['final_issue_type']} - {result['performance_rating']}")
+            else:
+                print(f"   ❌ {ticket_id}: {result['failure_reason']}")
+    
+    print("\n🎯 ENHANCED PIPELINE READY FOR PRODUCTION!")
 
 # DEBUG HELPER FUNCTIONS
 def debug_ticket_analysis(ticket_id, df):
