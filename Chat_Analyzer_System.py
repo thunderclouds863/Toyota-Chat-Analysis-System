@@ -401,7 +401,7 @@ class ConversationParser:
                 
                 # RELAXED: Hampir semua operator message dianggap potential answer
                 # Skip hanya yang benar-benar generic
-                if self._is_very_generic_reply(answer):
+                if self._is_generic_reply(answer):
                     print(f"   ⏭️  Skipping very generic reply: {answer[:30]}...")
                     continue
                 
@@ -476,7 +476,7 @@ class ConversationParser:
         
         return has_question_indicator or has_question_mark
     
-    def _is_very_generic_reply(self, message):
+    def _is_generic_reply(self, message):
         """Hanya skip yang benar-benar generic"""
         message_lower = str(message).lower()
         
@@ -518,7 +518,7 @@ class ConversationParser:
             if not subsequent_messages.empty:
                 # Ambil operator message pertama setelah question yang tidak terlalu generic
                 for _, operator_msg in subsequent_messages.iterrows():
-                    if not self._is_very_generic_reply(operator_msg['Message']):
+                    if not self._is_generic_reply(operator_msg['Message']):
                         lead_time = (operator_msg['parsed_timestamp'] - question_time).total_seconds()
                         
                         # Update pair dengan answer yang ditemukan
@@ -1342,7 +1342,7 @@ class ReplyAnalyzer:
                 answer = pair['answer']
                 
                 # Skip generic replies
-                if self._is_very_generic_reply(answer):
+                if self._is_generic_reply(answer):
                     continue
                 
                 # Skip jika ini first reply yang sama
@@ -1464,7 +1464,7 @@ class ReplyAnalyzer:
 
     def _is_meaningful_final_reply(self, message):
         """Cek apakah message meaningful untuk final reply"""
-        if self._is_very_generic_reply(message):
+        if self._is_generic_reply(message):
             return False
         
         message_lower = message.lower()
@@ -1491,7 +1491,7 @@ class ReplyAnalyzer:
                 role = pair.get('answer_role', '').lower()
                 
                 if any(keyword in role for keyword in ['operator', 'agent', 'admin', 'cs']):
-                    if not self._is_very_generic_reply(answer) and self._is_meaningful_final_reply(answer):
+                    if not self._is_generic_reply(answer) and self._is_meaningful_final_reply(answer):
                         operator_replies.append(pair)
         
         if operator_replies:
@@ -1645,7 +1645,7 @@ class ReplyAnalyzer:
                 answer = pair['answer']
                 
                 # Skip yang benar-benar generic
-                if self._is_very_generic_reply(answer):
+                if self._is_generic_reply(answer):
                     continue
                 
                 # Cek jika menunjukkan action/tindakan
@@ -1655,7 +1655,7 @@ class ReplyAnalyzer:
         
         # Fallback: ambil operator reply pertama yang tidak generic
         for pair in qa_pairs:
-            if pair['is_answered'] and not self._is_very_generic_reply(pair['answer']):
+            if pair['is_answered'] and not self._is_generic_reply(pair['answer']):
                 print(f"   🔄 First reply (fallback): {pair['answer'][:60]}...")
                 return self._create_reply_object(pair, 'first_fallback')
         
@@ -3924,6 +3924,7 @@ if __name__ == "__main__":
     
     for ticket_id in problematic_tickets:
         debug_ticket_analysis(ticket_id, raw_df)
+
 
 
 
