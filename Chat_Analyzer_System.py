@@ -1323,7 +1323,7 @@ class ReplyAnalyzer:
             first_reply = escalation_reply
         
         # Validasi requirements
-        is_valid = self._validate_requirements_enhanced(first_reply, final_reply, main_issue_type, customer_leave)
+        is_valid = self._validate_requirements(first_reply, final_reply, main_issue_type, customer_leave)
         
         # Calculate lead times
         lead_times = self._calculate_lead_times(qa_pairs, first_reply, final_reply, main_issue_type)
@@ -1336,7 +1336,7 @@ class ReplyAnalyzer:
             'lead_times': lead_times,
             'customer_leave': customer_leave,
             'escalation_case': escalation_reply is not None,
-            'reply_validation': self._validate_replies_enhanced(first_reply, final_reply, main_issue_type, customer_leave),
+            'reply_validation': self._validate_replies(first_reply, final_reply, main_issue_type, customer_leave),
             'requirement_compliant': is_valid
         }
         
@@ -1475,82 +1475,45 @@ class ReplyAnalyzer:
         
         return False
 
-    def _validate_requirements_enhanced(self, first_reply, final_reply, issue_type, customer_leave):
-        """Validasi requirements dengan approach FLEXIBLE untuk special cases"""
-        
-        # Untuk semua issue types, jika customer leave, requirements lebih relaxed
+    def _validate_requirements_simple(self, first_reply, final_reply, issue_type, customer_leave):
+        """Validasi requirements sederhana"""
         if customer_leave:
-            print("   ⚠️  Customer leave case - relaxed requirements")
-            return True
+            return True  # Relaxed requirements untuk customer leave
         
-        # Normal issues butuh FINAL reply
         if issue_type == 'normal':
-            if not final_reply:
-                print("   ❌ NORMAL: Final reply required but not found")
-                return False
-            return True
+            return final_reply is not None
         
-        # Serious/Complaint butuh FIRST reply
-        elif issue_type in ['serious', 'complaint']:
-            if not first_reply:
-                print("   ❌ SERIOUS/COMPLAINT: First reply required but not found")
-                return False
-            
-            # Untuk serious/complaint, final reply tidak wajib jika ada first reply
-            # (bisa di-handle di follow-up ticket)
-            if not final_reply:
-                print("   ⚠️  SERIOUS/COMPLAINT: Final reply not found (may be handled in follow-up)")
-                return True
-            
-            return True
+        if issue_type in ['serious', 'complaint']:
+            return first_reply is not None
         
         return True
 
-    def _validate_replies_enhanced(self, first_reply, final_reply, issue_type, customer_leave):
-        """Validasi replies dengan approach FLEXIBLE"""
+    def _validate_replies_simple(self, first_reply, final_reply, issue_type, customer_leave):
+        """Validasi replies sederhana"""
         validation = {
             'first_reply_found': first_reply is not None,
             'final_reply_found': final_reply is not None,
             'customer_leave': customer_leave,
             'quality_score': 0,
-            'quality_rating': 'fair',
-            'special_cases': []
+            'quality_rating': 'fair'
         }
         
-        # Quality scoring
         if first_reply:
             validation['quality_score'] += 2
         if final_reply:
             validation['quality_score'] += 2
         
-        # Special cases tracking
         if customer_leave:
-            validation['special_cases'].append('customer_leave')
-        
-        if final_reply:
-            reply_type = final_reply.get('reply_type', '')
-            if 'customer_leave' in reply_type:
-                validation['special_cases'].append('customer_leave_final')
-            if 'escalation' in reply_type:
-                validation['special_cases'].append('escalation_reply')
-            if 'fallback' in reply_type:
-                validation['special_cases'].append('fallback_reply')
-        
-        # Recommendation based on scenario
-        if customer_leave and final_reply:
-            validation['recommendation'] = 'Customer left conversation - used available reply'
+            validation['recommendation'] = 'Customer left conversation'
             validation['quality_rating'] = 'fair'
         elif not final_reply and issue_type == 'normal':
-            validation['recommendation'] = 'Final reply missing for normal issue'
+            validation['recommendation'] = 'Final reply missing'
             validation['quality_rating'] = 'poor'
         elif not first_reply and issue_type in ['serious', 'complaint']:
-            validation['recommendation'] = 'First reply missing for serious/complaint issue'
+            validation['recommendation'] = 'First reply missing'
             validation['quality_rating'] = 'poor'
-        elif final_reply and 'escalation' in final_reply.get('reply_type', ''):
-            validation['recommendation'] = 'Issue requires follow-up/escalation'
-            validation['quality_rating'] = 'good'
         else:
-            validation['recommendation'] = 'Meets basic requirements'
+            validation['recommendation'] = 'Requirements met'
             validation['quality_rating'] = 'good'
         
         return validation
@@ -3819,20 +3782,5 @@ def debug_ticket_analysis(ticket_id, df):
             print(f"   First Reply Found: {analysis['reply_validation']['first_reply_found']}")
             print(f"   Final Reply Found: {analysis['reply_validation']['final_reply_found']}")
             print(f"   Requirement Compliant: {analysis['requirement_compliant']}")
-
-# Test dengan ticket yang bermasalah
-if __name__ == "__main__":
-    # Debug problematic tickets
-    problematic_tickets = ['b9905bd0a0fc07739ca3ab1b932dee73', '18ea89910d0d8eac44aecca81d779e3a']
-    
-    for ticket_id in problematic_tickets:
-        debug_ticket_analysis(ticket_id, raw_df)
-
-
-
-
-
-
-
 
 
