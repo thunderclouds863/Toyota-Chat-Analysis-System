@@ -1317,7 +1317,7 @@ class ReplyAnalyzer:
     def __init__(self):
         # First reply indicators - IMPROVED: cari yang benar-benar meaningful first response
         self.first_reply_indicators = [
-            'jika dilihat dari tangkapan layar', 'jika dilihat', 'disarankan', 'kami cek', 'kami proses', 'akan kami', 'pengecekan', 'verifikasi', 
+            'dari tangkapan layar', 'jika dilihat', 'disarankan', 'kami cek', 'kami proses', 'akan kami', 'pengecekan', 'verifikasi', 
             'kami bantu', 'kami teruskan', 'kami diskusikan', 'cek dulu', 
             'proses dulu', 'tunggu sebentar', 'mohon ditunggu', 'akan kami proses',
             'mohon maaf', 'maaf', 'sangat disayangkan', 'kami turut prihatin',
@@ -3473,6 +3473,7 @@ print("   ✓ Complete Q-A Pairs Data")
 print("   ✓ Main Issue Scoring Details")
 print("   ✓ Reply Analysis Details")
 print("=" * 60)
+
 
 
 
