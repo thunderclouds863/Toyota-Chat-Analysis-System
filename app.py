@@ -234,20 +234,17 @@ def main_interface():
                         st.error("❌ Analysis failed. Please check your data format.")
     
     else:
-        # Show sample data option
+        # Show sample data option - FIXED VERSION
         st.markdown("---")
         st.markdown("## 🎯 Try with Sample Data")
         
-        if os.path.exists("data/raw_conversation.xlsx"):
+        sample_file_path = "data/raw_conversation.xlsx"
+        if os.path.exists(sample_file_path):
             if st.button("🧪 Analyze Sample Data", use_container_width=True):
                 with st.spinner("Loading sample data..."):
                     try:
-                        # Simulate file upload for sample data
-                        class MockFile:
-                            def __init__(self):
-                                self.name = "sample_data.xlsx"
-                        uploaded_file = MockFile()
-                        results, stats, excel_path = run_analysis(uploaded_file, 50, "Quick Analysis")
+                        # Use actual file path instead of MockFile
+                        results, stats, excel_path = run_analysis(sample_file_path, 50, "Quick Analysis")
                         
                         if results is not None and stats is not None:
                             st.session_state.analysis_complete = True
@@ -259,6 +256,7 @@ def main_interface():
                             st.error("Failed to analyze sample data")
                     except Exception as e:
                         st.error(f"Error analyzing sample data: {e}")
+                        st.error(traceback.format_exc())
         else:
             st.info("📁 No sample data found. Please upload your own Excel file.")
 
@@ -342,11 +340,14 @@ def run_analysis(uploaded_file, max_tickets, analysis_type):
         if hasattr(uploaded_file, 'read'):
             # Untuk file yang diupload via Streamlit
             df = pd.read_excel(uploaded_file)
-        else:
-            # Untuk file path
+            st.success(f"✅ Loaded {len(df)} rows from uploaded file")
+        elif isinstance(uploaded_file, str) and os.path.exists(uploaded_file):
+            # Untuk file path (sample data)
             df = pd.read_excel(uploaded_file)
-        
-        st.success(f"✅ Loaded {len(df)} rows from uploaded file")
+            st.success(f"✅ Loaded {len(df)} rows from sample file")
+        else:
+            st.error("❌ Invalid file type or path")
+            return None, None, None
         
         # 2. CHECK REQUIRED COLUMNS
         required_cols = ['Ticket Number', 'Role', 'Sender', 'Message Date', 'Message']
@@ -363,7 +364,7 @@ def run_analysis(uploaded_file, max_tickets, analysis_type):
         st.error(f"❌ File loading error: {str(e)}")
         st.error(f"Detailed error: {traceback.format_exc()}")
         return None, None, None
-
+        
 def display_complete_results():
     """Display COMPLETE analysis results dengan semua tab dan download"""
     
@@ -1449,6 +1450,7 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
 
 
 
