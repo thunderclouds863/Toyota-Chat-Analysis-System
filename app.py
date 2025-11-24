@@ -39,60 +39,51 @@ st.markdown("""
         text-align: center;
         margin-bottom: 2rem;
     }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    .metric-card-minimal {
+        background: white;
         border-radius: 12px;
-        padding: 25px 15px;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        padding: 25px 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
         margin: 8px;
         text-align: center;
-        border: none;
-        color: white;
+        border: 1px solid #f0f0f0;
+        transition: all 0.3s ease;
         position: relative;
-        overflow: hidden;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
-
-    .metric-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+    
+    .metric-card-minimal:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
     }
-
-    .metric-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcf7f, #4d96ff);
-    }
-
-    .metric-card h3 {
-        font-size: 0.85rem;
-        color: rgba(255, 255, 255, 0.9);
-        margin: 0 0 12px 0;
+    
+    .metric-card-minimal h3 {
+        font-size: 0.8rem;
+        color: #6c757d;
+        margin: 0 0 10px 0;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 1px;
+        letter-spacing: 0.8px;
     }
-
-    .metric-card h1 {
-        font-size: 2.2rem;
-        color: white;
+    
+    .metric-card-minimal h1 {
+        font-size: 2.1rem;
+        color: #2c3e50;
         margin: 0;
         font-weight: 700;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     }
-
-    .metric-card .trend {
-        font-size: 0.75rem;
-        margin-top: 8px;
-        padding: 4px 8px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.2);
-        display: inline-block;
+    
+    .metric-card-minimal .icon {
+        font-size: 1.5rem;
+        margin-bottom: 10px;
+        opacity: 0.8;
     }
+    
+    /* Border colors untuk variasi */
+    .metric-card-minimal.primary { border-top: 4px solid #3498db; }
+    .metric-card-minimal.success { border-top: 4px solid #2ecc71; }
+    .metric-card-minimal.warning { border-top: 4px solid #f39c12; }
+    .metric-card-minimal.info { border-top: 4px solid #9b59b6; }
+    .metric-card-minimal.dark { border-top: 4px solid #34495e; }
     .success-box {
         background-color: #d4edda;
         border: 1px solid #c3e6cb;
@@ -1221,3 +1212,4 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
