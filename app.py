@@ -24,7 +24,7 @@ except ImportError as e:
     ANALYSIS_AVAILABLE = False
 
 st.set_page_config(
-    page_title="Toyota Chat Analysis Dashboard",
+    page_title="Live Chat Analysis Dashboard",
     page_icon="🤖", 
     layout="wide",
     initial_sidebar_state="expanded"
@@ -86,8 +86,8 @@ st.markdown("""
 
 def main_interface():
     """Main interface dengan upload dan analysis options"""
-    st.markdown('<h1 class="main-header">🤖 Toyota Chat Lead Time Analysis</h1>', unsafe_allow_html=True)
-    st.markdown("Upload your chat data Excel file untuk analisis performa customer service")
+    st.markdown('<h1 class="main-header">🤖 Live Chat Lead Time Analysis</h1>', unsafe_allow_html=True)
+    st.markdown("Upload your chat data Excel file for Live Chat performance analysis")
     
     # Initialize session state
     if 'analysis_complete' not in st.session_state:
@@ -158,10 +158,10 @@ def main_interface():
         st.markdown("---")
         st.markdown("### 📖 How to Use")
         st.info("""
-        1. Upload Excel file dengan data chat
-        2. Atur pengaturan analisis  
-        3. Klik 'Start Analysis'
-        4. Lihat hasil & download reports
+        1. Upload an Excel file containing the chat data
+        2. Configure the analysis settings  
+        3. Click “Start Analysis”
+        4. View the results & download the reports
         """)
     
     # Main content area
@@ -533,9 +533,9 @@ def display_overview_tab(results, stats):
         with col2:
             st.metric("Final Reply Avg", f"{lt_stats['final_reply_avg_minutes']:.1f} min")
         with col3:
-            st.metric("First Reply Samples", lt_stats['first_reply_samples'])
+            st.metric("Count of First Reply", lt_stats['first_reply_samples'])
         with col4:
-            st.metric("Final Reply Samples", lt_stats['final_reply_samples'])
+            st.metric("Count of Final Reply", lt_stats['final_reply_samples'])
     
     # Reply Effectiveness
     if 'reply_effectiveness' in stats:
