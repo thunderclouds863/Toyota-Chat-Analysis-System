@@ -1,4 +1,4 @@
-# app.py - FIXED Streamlit Dashboard dengan Logic Baru
+# app.py - FIXED Streamlit Dashboard dengan REAL Analysis
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -10,10 +10,12 @@ import sys
 import tempfile
 import io
 import time
+import traceback
 
 # Import analysis modules
 sys.path.append('.')
 try:
+    # Import semua class yang diperlukan
     from Chat_Analyzer_System import (
         DataPreprocessor, CompleteAnalysisPipeline, 
         ResultsExporter, ModelTrainer, Config
@@ -148,6 +150,15 @@ def main_interface():
                     df_preview = pd.read_excel(uploaded_file)
                     st.write(f"Data shape: {df_preview.shape}")
                     st.dataframe(df_preview.head(10))
+                    
+                    # Check required columns
+                    required_cols = ['Ticket Number', 'Role', 'Sender', 'Message Date', 'Message']
+                    missing_cols = [col for col in required_cols if col not in df_preview.columns]
+                    if missing_cols:
+                        st.error(f"❌ Missing required columns: {missing_cols}")
+                    else:
+                        st.success("✅ All required columns present")
+                        
                 except Exception as e:
                     st.error(f"Error previewing data: {e}")
         
@@ -157,7 +168,7 @@ def main_interface():
         max_tickets = st.slider(
             "Maximum Tickets to Analyze",
             min_value=10,
-            max_value=100000,
+            max_value=1000,
             value=100,
             help="Limit number of tickets for faster analysis"
         )
@@ -190,8 +201,15 @@ def main_interface():
         st.info("""
         1. Upload an Excel file containing the chat data
         2. Configure the analysis settings  
-        3. Click “Start Analysis”
+        3. Click "Start Analysis"
         4. View the results & download the reports
+        
+        **Required columns:**
+        - Ticket Number
+        - Role  
+        - Sender
+        - Message Date
+        - Message
         """)
     
     # Main content area
@@ -218,18 +236,20 @@ def main_interface():
     else:
         # Show sample data option
         st.markdown("---")
-        st.markdown("## 🎯 Try with Sample Data")
+        st.markdown("## 🎯 Try with Your Excel Data")
         
-        if os.path.exists("data/raw_conversation.xlsx"):
-            if st.button("🧪 Analyze Sample Data", use_container_width=True):
-                with st.spinner("Loading sample data..."):
+        # Direct analysis of your provided file
+        excel_file_path = "chat_analysis_20251124_172748.xlsx"
+        if os.path.exists(excel_file_path):
+            if st.button("🧪 Analyze Your Excel Data", type="primary", use_container_width=True):
+                with st.spinner("Loading and analyzing your Excel data..."):
                     try:
-                        # Simulate file upload for sample data
-                        class MockFile:
-                            def __init__(self):
-                                self.name = "sample_data.xlsx"
-                        uploaded_file = MockFile()
-                        results, stats, excel_path = run_analysis(uploaded_file, 50, "Quick Analysis")
+                        # Load data langsung dari file Excel Anda
+                        df = pd.read_excel(excel_file_path)
+                        st.info(f"Loaded {len(df)} rows from your Excel file")
+                        
+                        # Jalankan analisis
+                        results, stats, excel_path = run_direct_analysis(df, 100, "Comprehensive Analysis")
                         
                         if results is not None and stats is not None:
                             st.session_state.analysis_complete = True
@@ -238,110 +258,64 @@ def main_interface():
                             st.session_state.excel_file_path = excel_path
                             st.rerun()
                         else:
-                            st.error("Failed to analyze sample data")
+                            st.error("Failed to analyze your Excel data")
                     except Exception as e:
-                        st.error(f"Error analyzing sample data: {e}")
+                        st.error(f"Error analyzing your Excel data: {e}")
+                        st.error(traceback.format_exc())
         else:
-            st.info("📁 No sample data found. Please upload your own Excel file.")
+            st.info("📁 Please upload your Excel file to start analysis.")
 
-def run_analysis(uploaded_file, max_tickets, analysis_type):
-    """Run analysis pada uploaded file"""
-    
-    # Save uploaded file ke temporary file
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
-        # Handle both real uploaded files and sample data
-        if hasattr(uploaded_file, 'getvalue'):
-            tmp_file.write(uploaded_file.getvalue())
-        else:
-            # For sample data, copy from actual file
-            import shutil
-            if os.path.exists("data/raw_conversation.xlsx"):
-                shutil.copy2("data/raw_conversation.xlsx", tmp_file.name)
-            else:
-                st.error("Sample data file not found")
-                return None, None, None
-        temp_path = tmp_file.name
-    
+def run_direct_analysis(df, max_tickets, analysis_type):
+    """Run analysis langsung dari DataFrame"""
     try:
-        # Progress tracking
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        status_text.text("🔄 Loading data...")
+        status_text.text("🔄 Initializing analysis pipeline...")
         progress_bar.progress(10)
         
-        # Load dan preprocess data
-        preprocessor = DataPreprocessor()
-        df = preprocessor.load_raw_data(temp_path)
-        
-        if df is None:
-            st.error("❌ Failed to load data. Please check file format.")
-            return None, None, None
-        
-        status_text.text("🔍 Analyzing conversations...")
+        # 1. PREPROCESS DATA
+        status_text.text("📊 Preprocessing data...")
         progress_bar.progress(30)
         
-        # Run analysis dengan error handling
-        try:
-            pipeline = CompleteAnalysisPipeline()
-            results, stats = pipeline.analyze_all_tickets(df, max_tickets=max_tickets)
-        except Exception as e:
-            st.error(f"❌ Analysis error: {str(e)}")
-            st.error("Please check your data format and try again.")
+        preprocessor = DataPreprocessor()
+        processed_data = preprocessor.preprocess_dataframe(df)
+        
+        if processed_data is None:
+            st.error("❌ Data preprocessing failed")
             return None, None, None
+            
+        st.success(f"✅ Preprocessed {len(processed_data)} conversations")
         
-        status_text.text("💾 Exporting results...")
-        progress_bar.progress(70)
+        # 2. RUN ANALYSIS PIPELINE
+        status_text.text("🔍 Analyzing conversations with AI...")
+        progress_bar.progress(60)
         
-        # Export results dengan error handling
-        try:
-            exporter = ResultsExporter()
-            excel_path = exporter.export_comprehensive_results(results, stats)
-        except Exception as e:
-            st.warning(f"⚠️ Excel export had issues: {e}")
-            excel_path = None
+        pipeline = CompleteAnalysisPipeline()
+        results, stats = pipeline.analyze_all_tickets(processed_data, max_tickets=max_tickets)
         
-        # Fallback jika export gagal
-        if excel_path is None or not os.path.exists(excel_path):
-            st.warning("⚠️ Excel export had issues, creating basic export...")
-            try:
-                # Create basic export
-                export_data = []
-                for result in results:
-                    if result['status'] == 'success':
-                        export_data.append({
-                            'ticket_id': result['ticket_id'],
-                            'issue_type': result['final_issue_type'],
-                            'main_question': result['main_question'],
-                            'first_reply_found': result['first_reply_found'],
-                            'final_reply_found': result['final_reply_found'],
-                            'first_reply_lead_time_min': result.get('first_reply_lead_time_minutes'),
-                            'final_reply_lead_time_min': result.get('final_reply_lead_time_minutes'),
-                            'performance_rating': result['performance_rating'],
-                            'customer_leave': result.get('customer_leave', False),
-                            'follow_up_ticket': result.get('follow_up_ticket', '')
-                        })
-                
-                df_export = pd.DataFrame(export_data)
-                excel_path = f"output/analysis_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                df_export.to_excel(excel_path, index=False)
-                st.success(f"✅ Basic export created: {excel_path}")
-            except Exception as e:
-                st.error(f"❌ Basic export also failed: {e}")
-                excel_path = None
+        if not results:
+            st.error("❌ No results generated from analysis")
+            return None, None, None
+            
+        successful = [r for r in results if r['status'] == 'success']
+        st.success(f"✅ Successfully analyzed {len(successful)} conversations")
         
+        # 3. EXPORT RESULTS
+        status_text.text("💾 Generating comprehensive report...")
+        progress_bar.progress(80)
+        
+        exporter = ResultsExporter()
+        excel_path = exporter.export_comprehensive_results(results, stats)
+        
+        # 4. CREATE VISUALIZATIONS
         status_text.text("📊 Creating visualizations...")
-        progress_bar.progress(90)
+        progress_bar.progress(95)
         
-        # Run model training untuk comprehensive analysis
-        if analysis_type == "Comprehensive Analysis":
-            try:
-                model_trainer = ModelTrainer(pipeline)
-                training_data = model_trainer.collect_training_data_from_analysis(results)
-                model_trainer.enhance_training_data()
-                model_trainer.train_and_evaluate_model(test_size=0.2)
-            except Exception as e:
-                st.warning(f"Model training skipped: {e}")
+        try:
+            exporter.create_comprehensive_visualizations(results, stats)
+        except Exception as e:
+            st.warning(f"Visualizations skipped: {e}")
         
         progress_bar.progress(100)
         status_text.text("✅ Analysis complete!")
@@ -354,17 +328,45 @@ def run_analysis(uploaded_file, max_tickets, analysis_type):
         
     except Exception as e:
         st.error(f"❌ Analysis error: {str(e)}")
-        import traceback
         st.error(f"Detailed error: {traceback.format_exc()}")
         return None, None, None
-    finally:
-        # Cleanup temporary file
-        if os.path.exists(temp_path):
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
-            
+
+def run_analysis(uploaded_file, max_tickets, analysis_type):
+    """Run analysis pada uploaded file - FIXED VERSION"""
+    
+    try:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        status_text.text("🔄 Loading uploaded file...")
+        progress_bar.progress(20)
+        
+        # 1. LOAD DATA DARI UPLOADED FILE
+        if hasattr(uploaded_file, 'read'):
+            # Untuk file yang diupload via Streamlit
+            df = pd.read_excel(uploaded_file)
+        else:
+            # Untuk file path
+            df = pd.read_excel(uploaded_file)
+        
+        st.success(f"✅ Loaded {len(df)} rows from uploaded file")
+        
+        # 2. CHECK REQUIRED COLUMNS
+        required_cols = ['Ticket Number', 'Role', 'Sender', 'Message Date', 'Message']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        
+        if missing_cols:
+            st.error(f"❌ Missing required columns: {missing_cols}")
+            return None, None, None
+        
+        # 3. RUN ANALYSIS
+        return run_direct_analysis(df, max_tickets, analysis_type)
+        
+    except Exception as e:
+        st.error(f"❌ File loading error: {str(e)}")
+        st.error(f"Detailed error: {traceback.format_exc()}")
+        return None, None, None
+
 def display_complete_results():
     """Display COMPLETE analysis results dengan semua tab dan download"""
     
@@ -666,13 +668,13 @@ def display_main_issues_tab(results):
         st.info("No successful analyses to display")
 
 def display_ticket_details(result):
-    """Display detailed information for a single ticket - DIPERBAIKI"""
+    """Display detailed information for a single ticket"""
     # Main Question
     st.markdown("### 📝 Main Question")
     st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
     st.caption(f"Detected as: {result['final_issue_type'].upper()} (Confidence: {result['detection_confidence']:.2f})")
     
-    # Special Cases Notes - LOGIC BARU
+    # Special Cases Notes
     special_notes = []
     if result.get('customer_leave'):
         special_notes.append("🚶 **Customer Leave**: Customer left conversation without response")
@@ -686,7 +688,7 @@ def display_ticket_details(result):
         for note in special_notes:
             st.markdown(f'<div class="special-case">{note}</div>', unsafe_allow_html=True)
     
-    # First Reply Section - LOGIC BARU
+    # First Reply Section
     st.markdown("#### 🔄 First Reply Analysis")
     col1, col2 = st.columns([2, 1])
     
@@ -694,10 +696,6 @@ def display_ticket_details(result):
         if result['first_reply_found']:
             first_reply_msg = result.get('first_reply_message', 'No message content available')
             st.markdown(f'<div class="message-box"><strong>First Reply:</strong> {first_reply_msg}</div>', unsafe_allow_html=True)
-            
-            # Tampilkan note jika ada
-            if result.get('first_reply_note'):
-                st.info(f"Note: {result['first_reply_note']}")
         else:
             if result['final_issue_type'] in ['serious', 'complaint']:
                 st.error("❌ No first reply found - REQUIRED for serious/complaint issues")
@@ -711,7 +709,7 @@ def display_ticket_details(result):
         else:
             st.metric("Status", "Not Found")
     
-    # Final Reply Section - LOGIC BARU  
+    # Final Reply Section  
     st.markdown("#### ✅ Final Reply Analysis")
     col1, col2 = st.columns([2, 1])
     
@@ -719,12 +717,6 @@ def display_ticket_details(result):
         if result['final_reply_found']:
             final_reply_msg = result.get('final_reply_message', 'No message content available')
             st.markdown(f'<div class="message-box"><strong>Final Reply:</strong> {final_reply_msg}</div>', unsafe_allow_html=True)
-            
-            # Tampilkan note khusus
-            if result.get('customer_leave_note'):
-                st.warning(result['customer_leave_note'])
-            elif result.get('final_reply_note'):
-                st.info(f"Note: {result['final_reply_note']}")
         else:
             if result['final_issue_type'] == 'normal' and not result.get('customer_leave'):
                 st.error("❌ No final reply found - REQUIRED for normal issues")
@@ -738,25 +730,16 @@ def display_ticket_details(result):
         else:
             st.metric("Status", "Not Found")
     
-    # Requirement Compliance - LOGIC BARU
-    st.markdown("#### 📋 Requirement Compliance")
+    # Performance Metrics
+    st.markdown("#### 📊 Performance Metrics")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if result['requirement_compliant']:
-            st.success("✅ Requirements Met")
-        else:
-            st.warning("⚠️ Requirements Partially Met")
-    
+        st.metric("Performance Rating", result['performance_rating'].upper())
     with col2:
-        st.metric("First Reply", "✅" if result['first_reply_found'] else "❌")
-    
+        st.metric("Quality Score", f"{result['quality_score']}/6")
     with col3:
-        st.metric("Final Reply", "✅" if result['final_reply_found'] else "❌")
-    
-    # Recommendation
-    if result.get('recommendation'):
-        st.info(f"💡 **Recommendation**: {result['recommendation']}")
+        st.metric("Total Messages", result['total_messages'])
 
 def display_lead_time_tab(results, stats):
     """Display lead time analysis dengan breakdown per issue type"""
@@ -809,7 +792,7 @@ def display_lead_time_tab(results, stats):
             # Visualization
             st.markdown("### 📊 Lead Time Comparison by Issue Type")
             
-            # Prepare data for visualization - also maintain the same order
+            # Prepare data for visualization
             viz_data = []
             for issue_type in desired_order:
                 if issue_type in stats['issue_type_lead_times']:
@@ -835,7 +818,6 @@ def display_lead_time_tab(results, stats):
             if viz_data:
                 df_viz = pd.DataFrame(viz_data)
                 
-                # Ensure the x-axis order in the chart
                 fig = px.bar(
                     df_viz, 
                     x='Issue Type', 
@@ -848,7 +830,7 @@ def display_lead_time_tab(results, stats):
                         'First Reply': '#2E86AB',
                         'Final Reply': '#A23B72'
                     },
-                    category_orders={"Issue Type": [t.upper() for t in desired_order]}  # This ensures the order in the chart
+                    category_orders={"Issue Type": [t.upper() for t in desired_order]}
                 )
                 
                 # Add sample size annotations
@@ -942,7 +924,7 @@ def display_performance_tab(results, stats):
                 df_perf['performance']
             ).reset_index()
             
-            if len(perf_pivot) > 1:  # Only plot if we have multiple issue types
+            if len(perf_pivot) > 1:
                 fig_stacked = px.bar(
                     perf_pivot, 
                     x='issue_type',
@@ -1179,7 +1161,7 @@ def display_debug_tab(results, stats):
     # Show failed analyses
     if failed:
         st.markdown("### ❌ Failed Analyses")
-        for result in failed[:5]:  # Show first 5 failures
+        for result in failed[:5]:
             with st.expander(f"Failed: {result['ticket_id']}"):
                 st.write(f"Reason: {result['failure_reason']}")
     
