@@ -432,7 +432,7 @@ def display_enhanced_results():
         display_issue_types_tab(results, stats)
     
     with tab3:
-        display_professional_lead_time_tab(results, stats)
+        display_enhanced_lead_time_tab(results, stats)
     
     with tab4:
         display_performance_tab(results, stats)
@@ -1393,6 +1393,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
