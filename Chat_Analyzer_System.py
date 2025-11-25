@@ -668,34 +668,53 @@ class ReplyAnalyzer:
             }
         return None
     
-def _find_normal_final_reply(self, ticket_df, question_time):
-    """Cari normal final reply (mengandung solusi) - PERBAIKAN: skip generic replies"""
-    operator_messages = ticket_df[
-        (ticket_df['parsed_timestamp'] > question_time) &
-        (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
-    ].sort_values('parsed_timestamp')
-    
-    # Skip patterns untuk reply yang tidak mengandung solusi
-    non_solution_patterns = [
-        'apabila sudah cukup',
-        'apakah sudah cukup', 
-        'apakah informasinya sudah cukup',
-        'terima kasih telah menghubungi',
-        'selamat beraktivitas',
-        'goodbye',
-        'bye',
-        'sampai jumpa'
-    ]
-    
-    # Cari yang mengandung solusi dan BUKAN generic reply
-    for _, msg in operator_messages.iterrows():
-        message = str(msg['Message']).lower()
+    def _find_normal_final_reply(self, ticket_df, question_time):
+        """Cari normal final reply (mengandung solusi) - PERBAIKAN: skip generic replies"""
+        operator_messages = ticket_df[
+            (ticket_df['parsed_timestamp'] > question_time) &
+            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+        ].sort_values('parsed_timestamp')
         
-        # Skip jika mengandung pattern non-solution
-        if any(pattern in message for pattern in non_solution_patterns):
-            continue
+        # Skip patterns untuk reply yang tidak mengandung solusi
+        non_solution_patterns = [
+            'apabila sudah cukup',
+            'apakah sudah cukup', 
+            'apakah informasinya sudah cukup',
+            'terima kasih telah menghubungi',
+            'selamat beraktivitas',
+            'goodbye',
+            'bye',
+            'sampai jumpa'
+        ]
+        
+        # Cari yang mengandung solusi dan BUKAN generic reply
+        for _, msg in operator_messages.iterrows():
+            message = str(msg['Message']).lower()
             
-        if self._contains_solution_keyword(msg['Message']):
+            # Skip jika mengandung pattern non-solution
+            if any(pattern in message for pattern in non_solution_patterns):
+                continue
+                
+            if self._contains_solution_keyword(msg['Message']):
+                lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
+                
+                return {
+                    'message': msg['Message'],
+                    'timestamp': msg['parsed_timestamp'],
+                    'lead_time_seconds': lead_time,
+                    'lead_time_minutes': round(lead_time / 60, 2),
+                    'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
+                    'note': 'Contains solution'
+                }
+        
+        # Fallback: ambil operator reply pertama yang BUKAN generic
+        for _, msg in operator_messages.iterrows():
+            message = str(msg['Message']).lower()
+            
+            # Skip generic replies
+            if any(pattern in message for pattern in non_solution_patterns):
+                continue
+                
             lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
             
             return {
@@ -704,29 +723,10 @@ def _find_normal_final_reply(self, ticket_df, question_time):
                 'lead_time_seconds': lead_time,
                 'lead_time_minutes': round(lead_time / 60, 2),
                 'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
-                'note': 'Contains solution'
+                'note': 'First non-generic operator reply'
             }
-    
-    # Fallback: ambil operator reply pertama yang BUKAN generic
-    for _, msg in operator_messages.iterrows():
-        message = str(msg['Message']).lower()
         
-        # Skip generic replies
-        if any(pattern in message for pattern in non_solution_patterns):
-            continue
-            
-        lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
-        
-        return {
-            'message': msg['Message'],
-            'timestamp': msg['parsed_timestamp'],
-            'lead_time_seconds': lead_time,
-            'lead_time_minutes': round(lead_time / 60, 2),
-            'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
-            'note': 'First non-generic operator reply'
-        }
-    
-    return None
+        return None
     
     def _find_ticket_reopened_time(self, ticket_df):
         """Cari timestamp ketika ticket di-reopen"""
@@ -1159,6 +1159,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
