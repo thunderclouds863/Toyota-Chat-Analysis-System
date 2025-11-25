@@ -668,42 +668,65 @@ class ReplyAnalyzer:
             }
         return None
     
-    def _find_normal_final_reply(self, ticket_df, question_time):
-        """Cari normal final reply (mengandung solusi)"""
-        operator_messages = ticket_df[
-            (ticket_df['parsed_timestamp'] > question_time) &
-            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
-        ].sort_values('parsed_timestamp')
+def _find_normal_final_reply(self, ticket_df, question_time):
+    """Cari normal final reply (mengandung solusi) - PERBAIKAN: skip generic replies"""
+    operator_messages = ticket_df[
+        (ticket_df['parsed_timestamp'] > question_time) &
+        (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+    ].sort_values('parsed_timestamp')
+    
+    # Skip patterns untuk reply yang tidak mengandung solusi
+    non_solution_patterns = [
+        'apabila sudah cukup',
+        'apakah sudah cukup', 
+        'apakah informasinya sudah cukup',
+        'terima kasih telah menghubungi',
+        'selamat beraktivitas',
+        'goodbye',
+        'bye',
+        'sampai jumpa'
+    ]
+    
+    # Cari yang mengandung solusi dan BUKAN generic reply
+    for _, msg in operator_messages.iterrows():
+        message = str(msg['Message']).lower()
         
-        # Cari yang mengandung solusi
-        for _, msg in operator_messages.iterrows():
-            if self._contains_solution_keyword(msg['Message']):
-                lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
-                
-                return {
-                    'message': msg['Message'],
-                    'timestamp': msg['parsed_timestamp'],
-                    'lead_time_seconds': lead_time,
-                    'lead_time_minutes': round(lead_time / 60, 2),
-                    'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
-                    'note': 'Contains solution'
-                }
-        
-        # Fallback: ambil operator reply pertama
-        if not operator_messages.empty:
-            first_msg = operator_messages.iloc[0]
-            lead_time = (first_msg['parsed_timestamp'] - question_time).total_seconds()
+        # Skip jika mengandung pattern non-solution
+        if any(pattern in message for pattern in non_solution_patterns):
+            continue
+            
+        if self._contains_solution_keyword(msg['Message']):
+            lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
             
             return {
-                'message': first_msg['Message'],
-                'timestamp': first_msg['parsed_timestamp'],
+                'message': msg['Message'],
+                'timestamp': msg['parsed_timestamp'],
                 'lead_time_seconds': lead_time,
                 'lead_time_minutes': round(lead_time / 60, 2),
                 'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
-                'note': 'First operator reply'
+                'note': 'Contains solution'
             }
+    
+    # Fallback: ambil operator reply pertama yang BUKAN generic
+    for _, msg in operator_messages.iterrows():
+        message = str(msg['Message']).lower()
         
-        return None
+        # Skip generic replies
+        if any(pattern in message for pattern in non_solution_patterns):
+            continue
+            
+        lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
+        
+        return {
+            'message': msg['Message'],
+            'timestamp': msg['parsed_timestamp'],
+            'lead_time_seconds': lead_time,
+            'lead_time_minutes': round(lead_time / 60, 2),
+            'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
+            'note': 'First non-generic operator reply'
+        }
+    
+    return None
     
     def _find_ticket_reopened_time(self, ticket_df):
         """Cari timestamp ketika ticket di-reopen"""
@@ -948,7 +971,7 @@ class CompleteAnalysisPipeline:
         return result
     
     def _calculate_stats(self, total_tickets):
-        """Hitung statistics dari results - FIXED VERSION"""
+        """Hitung statistics dari results - FIXED VERSION dengan konversi ke days"""
         successful = [r for r in self.results if r['status'] == 'success']
         failed = [r for r in self.results if r['status'] == 'failed']
         
@@ -968,32 +991,50 @@ class CompleteAnalysisPipeline:
             performance_ratings = [r['performance_rating'] for r in successful]
             stats['performance_distribution'] = dict(Counter(performance_ratings))
             
-            # Lead time statistics - FIXED: Handle None values dan convert ke float
-            first_lead_times = []
-            final_lead_times = []
+            # Lead time statistics - FIXED: Konversi semua ke days
+            first_lead_times_minutes = []
+            final_lead_times_days = []  # SEMUA final reply dalam days
             
             for r in successful:
-                # First reply lead times
+                # First reply lead times (tetap dalam minutes untuk display)
                 first_lt = r.get('first_reply_lead_time_minutes')
                 if first_lt is not None and first_lt != 'N/A':
                     try:
-                        first_lead_times.append(float(first_lt))
+                        first_lt_float = float(first_lt)
+                        if first_lt_float > 0:
+                            first_lead_times_minutes.append(first_lt_float)
                     except (ValueError, TypeError):
-                        pass  # Skip jika tidak bisa di-convert ke float
+                        pass
                 
-                # Final reply lead times  
-                final_lt = r.get('final_reply_lead_time_minutes')
-                if final_lt is not None and final_lt != 'N/A':
-                    try:
-                        final_lead_times.append(float(final_lt))
-                    except (ValueError, TypeError):
-                        pass  # Skip jika tidak bisa di-convert ke float
+                # Final reply lead times - KONVERSI SEMUA KE DAYS
+                final_lt_days = None
+                
+                if r['final_issue_type'] == 'complaint':
+                    # Complaint: langsung ambil days
+                    lt_days = r.get('final_reply_lead_time_days')
+                    if lt_days not in [None, 'N/A']:
+                        try:
+                            final_lt_days = float(lt_days)
+                        except (ValueError, TypeError):
+                            pass
+                else:
+                    # Normal & Serious: convert minutes to days
+                    lt_min = r.get('final_reply_lead_time_minutes')
+                    if lt_min not in [None, 'N/A']:
+                        try:
+                            lt_min_float = float(lt_min)
+                            final_lt_days = lt_min_float / (24 * 60)  # Convert minutes to days
+                        except (ValueError, TypeError):
+                            pass
+                
+                if final_lt_days is not None and final_lt_days > 0:
+                    final_lead_times_days.append(final_lt_days)
             
             stats['lead_time_stats'] = {
-                'first_reply_avg_minutes': np.mean(first_lead_times) if first_lead_times else 0,
-                'final_reply_avg_minutes': np.mean(final_lead_times) if final_lead_times else 0,
-                'first_reply_samples': len(first_lead_times),
-                'final_reply_samples': len(final_lead_times)
+                'first_reply_avg_minutes': np.mean(first_lead_times_minutes) if first_lead_times_minutes else 0,
+                'final_reply_avg_days': np.mean(final_lead_times_days) if final_lead_times_days else 0,  # PERUBAHAN: days bukan minutes
+                'first_reply_samples': len(first_lead_times_minutes),
+                'final_reply_samples': len(final_lead_times_days)
             }
             
             # Reply effectiveness
@@ -1118,6 +1159,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
