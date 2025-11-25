@@ -1225,6 +1225,10 @@ class HybridClassifier:
             for feature, score in top_features:
                 print(f"   {feature}: {score:.3f}")
 
+import re
+import pandas as pd
+from typing import List, Dict, Any, Optional, Tuple
+
 class ReplyAnalyzer:
     def __init__(self):
         # First reply patterns
@@ -1291,6 +1295,41 @@ class ReplyAnalyzer:
             r'menghubungi\s+anda', r'silakan\s+memilih\s+dari\s+menu', r'klik\s+setuju',
             r'data\s+privasi', r'pilih\s+menu', r'silahkan\s+ketik\s+nama'
         ]
+
+    def _is_generic_reply(self, message):
+        """Check if message is a generic/bot reply"""
+        if not message:
+            return False
+        message_lower = message.lower()
+        return any(re.search(pattern, message_lower) for pattern in self.generic_reply_patterns)
+
+    def _is_solution_reply(self, message):
+        """Check if message contains solution patterns"""
+        if not message:
+            return False
+        message_lower = message.lower()
+        return any(re.search(pattern, message_lower) for pattern in self.solution_patterns)
+
+    def _is_escalation_reply(self, message):
+        """Check if message contains escalation patterns"""
+        if not message:
+            return False
+        message_lower = message.lower()
+        return any(re.search(pattern, message_lower) for pattern in self.escalation_patterns)
+
+    def _is_conversation_ender(self, message):
+        """Check if message is a conversation ender"""
+        if not message:
+            return False
+        message_lower = message.lower()
+        return any(re.search(pattern, message_lower) for pattern in self.conversation_ender_patterns)
+
+    def _is_first_reply_pattern(self, message):
+        """Check if message matches first reply patterns"""
+        if not message:
+            return False
+        message_lower = message.lower()
+        return any(re.search(pattern, message_lower) for pattern in self.first_reply_patterns)
 
     def analyze_replies(self, qa_pairs, main_issue_type, customer_info=None, all_tickets_data=None):
         """Analyze replies dengan LOGIC BARU yang disederhanakan"""
@@ -1435,6 +1474,8 @@ class ReplyAnalyzer:
 
     def _should_skip_reply(self, message):
         """Cek apakah reply harus di-skip (seperti 'Apakah informasinya sudah cukup jelas')"""
+        if not message:
+            return False
         message_lower = message.lower()
         return any(re.search(pattern, message_lower) for pattern in self.skip_patterns)
 
@@ -1447,6 +1488,9 @@ class ReplyAnalyzer:
 
     def _is_meaningful_reply(self, message):
         """Cek apakah message meaningful (bukan generic atau skip pattern)"""
+        if not message:
+            return False
+            
         if self._is_generic_reply(message) or self._should_skip_reply(message):
             return False
         
@@ -1631,8 +1675,41 @@ class ReplyAnalyzer:
                 'quality_score': 0,
                 'quality_rating': 'failed'
             },
-            'requirement_compliant': False
+            'requirement_compliant': False,
+            'special_cases': []
         }
+
+# Example usage and test function
+def test_reply_analyzer():
+    """Test function untuk ReplyAnalyzer"""
+    analyzer = ReplyAnalyzer()
+    
+    # Test data
+    test_qa_pairs = [
+        {
+            'question': 'Bagaimana cara reset password?',
+            'question_time': pd.Timestamp('2024-01-01 10:00:00'),
+            'answer': 'Silakan ikuti langkah-langkah berikut untuk reset password...',
+            'answer_time': pd.Timestamp('2024-01-01 10:01:00'),
+            'answer_role': 'Operator',
+            'is_answered': True,
+            'lead_time_seconds': 60,
+            'lead_time_minutes': 1.0,
+            'lead_time_hhmmss': '00:01:00'
+        }
+    ]
+    
+    first_reply, final_reply, analysis = analyzer.analyze_replies(
+        test_qa_pairs, 'normal'
+    )
+    
+    print("Test Results:")
+    print(f"First Reply: {first_reply}")
+    print(f"Final Reply: {final_reply}")
+    print(f"Analysis: {analysis}")
+
+if __name__ == "__main__":
+    test_reply_analyzer()
         
 # CompleteAnalysisPipeline (FULL FIX)
 import time
@@ -3840,6 +3917,7 @@ def debug_ticket_analysis(ticket_id, df):
             print(f"   First Reply Found: {analysis['reply_validation']['first_reply_found']}")
             print(f"   Final Reply Found: {analysis['reply_validation']['final_reply_found']}")
             print(f"   Requirement Compliant: {analysis['requirement_compliant']}")
+
 
 
 
