@@ -498,136 +498,269 @@ def format_lead_time(minutes):
         return "N/A"
         
 def display_professional_overview_tab(results, stats):
-    """Display professional overview tab dengan rangkuman penting"""
-    st.markdown("## 📊 Performance Overview")
+    """Display professional overview dengan visualisasi yang lebih baik"""
+    st.subheader("📈 Professional Performance Overview")
     
-    successful = [r for r in results if r['status'] == 'success']
+    # Filter hanya results yang successful
+    successful_results = [r for r in results if r.get('status') == 'success']
     
-    # ROW 1: Key Metrics
+    if not successful_results:
+        st.warning("No successful analysis results to display")
+        return
+    
+    # Performance Metrics Cards
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        # Issue Type Distribution
-        if 'issue_type_distribution' in stats:
-            total_issues = sum(stats['issue_type_distribution'].values())
-            normal_pct = (stats['issue_type_distribution'].get('normal', 0) / total_issues * 100) if total_issues > 0 else 0
-            st.metric("Normal Inquiries", f"{normal_pct:.1f}%")
+        total_tickets = len(successful_results)
+        st.metric("Total Tickets Analyzed", total_tickets)
     
     with col2:
-        if 'issue_type_distribution' in stats:
-            total_issues = sum(stats['issue_type_distribution'].values())
-            serious_pct = (stats['issue_type_distribution'].get('serious', 0) / total_issues * 100) if total_issues > 0 else 0
-            st.metric("Serious Cases", f"{serious_pct:.1f}%")
+        compliant_tickets = sum(1 for r in successful_results if r.get('requirement_compliant', False))
+        compliance_rate = (compliant_tickets / total_tickets * 100) if total_tickets > 0 else 0
+        st.metric("Requirement Compliance", f"{compliance_rate:.1f}%")
     
     with col3:
-        if 'issue_type_distribution' in stats:
-            total_issues = sum(stats['issue_type_distribution'].values())
-            complaint_pct = (stats['issue_type_distribution'].get('complaint', 0) / total_issues * 100) if total_issues > 0 else 0
-            st.metric("Complaint Cases", f"{complaint_pct:.1f}%")
+        avg_quality = np.mean([r.get('quality_score', 0) for r in successful_results])
+        st.metric("Average Quality Score", f"{avg_quality:.1f}/5")
     
     with col4:
-        if 'reply_effectiveness' in stats:
-            customer_leave = stats['reply_effectiveness'].get('customer_leave_cases', 0)
-            total_successful = stats.get('successful_analysis', 1)
-            leave_rate = (customer_leave / total_successful * 100) if total_successful > 0 else 0
-            st.metric("Customer Leave Rate", f"{leave_rate:.1f}%")
+        customer_leave_rate = (sum(1 for r in successful_results if r.get('customer_leave', False)) / total_tickets * 100) if total_tickets > 0 else 0
+        st.metric("Customer Leave Rate", f"{customer_leave_rate:.1f}%")
     
-    # ROW 2: Charts
+    st.markdown("---")
+    
+    # Row 1: Issue Distribution dan Performance Rating
     col1, col2 = st.columns(2)
     
     with col1:
-        # Issue Type Distribution Pie Chart
-        if 'issue_type_distribution' in stats:
-            issue_types = list(stats['issue_type_distribution'].keys())
-            counts = list(stats['issue_type_distribution'].values())
+        st.subheader("📊 Issue Type Distribution")
+        issue_dist = stats.get('issue_type_distribution', {})
+        if issue_dist:
+            # Convert to DataFrame untuk plotting
+            issue_data = []
+            for issue_type, count in issue_dist.items():
+                issue_data.append({
+                    'Issue Type': issue_type.title(),
+                    'Count': count,
+                    'Percentage': (count / total_tickets * 100)
+                })
             
-            colors = ['#2E86AB', '#A23B72', '#F18F01']  # normal, serious, complaint
-            color_map = {}
-            for i, issue_type in enumerate(issue_types):
-                if i < len(colors):
-                    color_map[issue_type] = colors[i]
-                else:
-                    color_map[issue_type] = '#999999'
+            issue_df = pd.DataFrame(issue_data)
             
-            fig_issues = px.pie(
-                values=counts, 
-                names=issue_types,
-                title='Issue Type Distribution',
-                color=issue_types,
-                color_discrete_map=color_map
+            # Buat bar chart manual
+            fig_issue = go.Figure()
+            fig_issue.add_trace(go.Bar(
+                x=issue_df['Issue Type'],
+                y=issue_df['Count'],
+                text=issue_df['Percentage'].round(1).astype(str) + '%',
+                textposition='auto',
+                marker_color=['#1f77b4', '#ff7f0e', '#2ca02c']
+            ))
+            
+            fig_issue.update_layout(
+                title="Distribution of Issue Types",
+                xaxis_title="Issue Type",
+                yaxis_title="Count",
+                showlegend=False
             )
-            fig_issues.update_layout(showlegend=True)
-            st.plotly_chart(fig_issues, use_container_width=True)
+            st.plotly_chart(fig_issue, use_container_width=True)
+        else:
+            st.info("No issue type distribution data available")
     
     with col2:
-        # Performance Distribution
-        if 'performance_distribution' in stats:
-            performances = list(stats['performance_distribution'].keys())
-            counts = list(stats['performance_distribution'].values())
+        st.subheader("⭐ Performance Rating Distribution")
+        performance_dist = stats.get('performance_distribution', {})
+        if performance_dist:
+            # Convert to DataFrame untuk plotting
+            perf_data = []
+            for rating, count in performance_dist.items():
+                perf_data.append({
+                    'Rating': rating.title(),
+                    'Count': count,
+                    'Percentage': (count / total_tickets * 100)
+                })
             
-            # Sort performances dalam order yang meaningful
-            performance_order = ['excellent', 'good', 'fair', 'poor']
-            performances_sorted = [p for p in performance_order if p in performances]
-            counts_sorted = [counts[performances.index(p)] for p in performances_sorted]
+            perf_df = pd.DataFrame(perf_data)
             
-            fig_perf = px.bar(
-                x=performances_sorted, 
-                y=counts_sorted,
-                title='Performance Rating Distribution',
-                labels={'x': 'Performance Rating', 'y': 'Number of Conversations'},
-                color=performances_sorted,
-                color_discrete_map={
-                    'excellent': '#28a745',
-                    'good': '#17a2b8', 
-                    'fair': '#ffc107',
-                    'poor': '#dc3545'
-                }
+            # Buat pie chart
+            fig_perf = go.Figure()
+            fig_perf.add_trace(go.Pie(
+                labels=perf_df['Rating'],
+                values=perf_df['Count'],
+                textinfo='label+percent',
+                hole=0.3,
+                marker_colors=['#2ca02c', '#ff7f0e', '#d62728']  # green, orange, red
+            ))
+            
+            fig_perf.update_layout(
+                title="Performance Rating Distribution"
             )
-            fig_perf.update_layout(xaxis_title="Performance Rating", yaxis_title="Count")
             st.plotly_chart(fig_perf, use_container_width=True)
+        else:
+            st.info("No performance rating data available")
     
-    # ROW 3: Lead Time Summary - MENGGUNAKAN LOGIC SAMA DENGAN BREAKDOWN
-    st.markdown("### ⏱️ Lead Time Performance")
+    # Row 2: Lead Time Analysis
+    st.subheader("⏱️ Lead Time Analysis")
     
-    lead_time_stats = calculate_lead_time_stats(results)
-    
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
     
     with col1:
-        first_avg = lead_time_stats['first_avg_minutes']
-        display_first = format_lead_time(first_avg)
-        st.metric("First Reply Avg", display_first)
+        st.markdown("**First Reply Lead Times**")
+        first_lead_times = [r.get('first_reply_lead_time_minutes', 0) for r in successful_results 
+                           if r.get('first_reply_lead_time_minutes') is not None]
+        
+        if first_lead_times:
+            first_lead_df = pd.DataFrame({'Lead Time (minutes)': first_lead_times})
+            
+            fig_first = go.Figure()
+            fig_first.add_trace(go.Histogram(
+                x=first_lead_df['Lead Time (minutes)'],
+                nbinsx=20,
+                marker_color='#1f77b4',
+                opacity=0.7
+            ))
+            
+            fig_first.update_layout(
+                title="Distribution of First Reply Lead Times",
+                xaxis_title="Lead Time (minutes)",
+                yaxis_title="Frequency"
+            )
+            st.plotly_chart(fig_first, use_container_width=True)
+            
+            # Statistics
+            avg_first = np.mean(first_lead_times)
+            median_first = np.median(first_lead_times)
+            st.metric("Average First Reply Time", f"{avg_first:.1f} min")
+            st.metric("Median First Reply Time", f"{median_first:.1f} min")
+        else:
+            st.info("No first reply lead time data available")
     
     with col2:
-        final_avg = lead_time_stats['final_avg_minutes']
-        display_final = format_lead_time(final_avg)
-        st.metric("Final Reply Avg", display_final)
-    
-    with col3:
-        st.metric("First Reply Samples", lead_time_stats['first_samples'])
-    
-    with col4:
-        st.metric("Final Reply Samples", lead_time_stats['final_samples'])
-    
-    # ROW 4: Reply Effectiveness
-    st.markdown("### 💬 Reply Effectiveness")
-    
-    if 'reply_effectiveness' in stats:
-        eff = stats['reply_effectiveness']
-        col1, col2, col3 = st.columns(3)
+        st.markdown("**Final Reply Lead Times**")
+        final_lead_times = [r.get('final_reply_lead_time_minutes', 0) for r in successful_results 
+                           if r.get('final_reply_lead_time_minutes') is not None]
         
-        with col1:
-            first_reply_rate = eff.get('first_reply_found_rate', 0) * 100
-            st.metric("First Reply Found", f"{first_reply_rate:.1f}%")
-        
-        with col2:
-            final_reply_rate = eff.get('final_reply_found_rate', 0) * 100
-            st.metric("Final Reply Found", f"{final_reply_rate:.1f}%")
-        
-        with col3:
-            customer_leave = eff.get('customer_leave_cases', 0)
-            st.metric("Customer Leave Cases", customer_leave)
+        if final_lead_times:
+            final_lead_df = pd.DataFrame({'Lead Time (minutes)': final_lead_times})
+            
+            fig_final = go.Figure()
+            fig_final.add_trace(go.Histogram(
+                x=final_lead_df['Lead Time (minutes)'],
+                nbinsx=20,
+                marker_color='#ff7f0e',
+                opacity=0.7
+            ))
+            
+            fig_final.update_layout(
+                title="Distribution of Final Reply Lead Times",
+                xaxis_title="Lead Time (minutes)",
+                yaxis_title="Frequency"
+            )
+            st.plotly_chart(fig_final, use_container_width=True)
+            
+            # Statistics
+            avg_final = np.mean(final_lead_times)
+            median_final = np.median(final_lead_times)
+            st.metric("Average Final Reply Time", f"{avg_final:.1f} min")
+            st.metric("Median Final Reply Time", f"{median_final:.1f} min")
+        else:
+            st.info("No final reply lead time data available")
     
+    # Row 3: Quality Metrics
+    st.subheader("📈 Quality Metrics Analysis")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Quality Score Distribution**")
+        quality_scores = [r.get('quality_score', 0) for r in successful_results]
+        
+        if quality_scores:
+            quality_df = pd.DataFrame({'Quality Score': quality_scores})
+            
+            fig_quality = go.Figure()
+            fig_quality.add_trace(go.Histogram(
+                x=quality_df['Quality Score'],
+                nbinsx=10,
+                marker_color='#2ca02c',
+                opacity=0.7
+            ))
+            
+            fig_quality.update_layout(
+                title="Distribution of Quality Scores",
+                xaxis_title="Quality Score (0-5)",
+                yaxis_title="Frequency"
+            )
+            st.plotly_chart(fig_quality, use_container_width=True)
+        else:
+            st.info("No quality score data available")
+    
+    with col2:
+        st.markdown("**Reply Effectiveness**")
+        reply_data = {
+            'Metric': ['First Reply Found', 'Final Reply Found', 'Customer Leave'],
+            'Rate': [
+                stats.get('reply_effectiveness', {}).get('first_reply_found_rate', 0) * 100,
+                stats.get('reply_effectiveness', {}).get('final_reply_found_rate', 0) * 100,
+                stats.get('reply_effectiveness', {}).get('customer_leave_cases', 0) / total_tickets * 100
+            ]
+        }
+        
+        reply_df = pd.DataFrame(reply_data)
+        
+        fig_reply = go.Figure()
+        fig_reply.add_trace(go.Bar(
+            x=reply_df['Metric'],
+            y=reply_df['Rate'],
+            text=reply_df['Rate'].round(1).astype(str) + '%',
+            textposition='auto',
+            marker_color=['#1f77b4', '#ff7f0e', '#d62728']
+        ))
+        
+        fig_reply.update_layout(
+            title="Reply Effectiveness Metrics",
+            xaxis_title="Metric",
+            yaxis_title="Rate (%)",
+            yaxis_range=[0, 100]
+        )
+        st.plotly_chart(fig_reply, use_container_width=True)
+    
+    # Detailed Statistics Table
+    st.subheader("📋 Detailed Performance Statistics")
+    
+    # Create summary table
+    summary_data = []
+    for result in successful_results[:10]:  # Show first 10 for preview
+        summary_data.append({
+            'Ticket ID': result.get('ticket_id', 'N/A'),
+            'Issue Type': result.get('final_issue_type', 'N/A'),
+            'Performance': result.get('performance_rating', 'N/A'),
+            'Quality Score': result.get('quality_score', 0),
+            'First Reply': '✅' if result.get('first_reply_found') else '❌',
+            'Final Reply': '✅' if result.get('final_reply_found') else '❌',
+            'Customer Leave': '✅' if result.get('customer_leave') else '❌',
+            'Compliant': '✅' if result.get('requirement_compliant') else '❌'
+        })
+    
+    if summary_data:
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, use_container_width=True)
+        
+        # Download button for full results
+        if st.button("📥 Download Full Analysis Report"):
+            exporter = ResultsExporter()
+            file_path = exporter.export_comprehensive_results(results, stats)
+            if file_path:
+                with open(file_path, "rb") as file:
+                    st.download_button(
+                        label="Download Excel Report",
+                        data=file,
+                        file_name=os.path.basename(file_path),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+    else:
+        st.info("No detailed data available for display")    
 def display_enhanced_lead_time_tab(results, stats):
     """Display enhanced lead time analysis - SEMUA ISSUE TYPE DISATUKAN"""
     st.markdown("## ⏱️ Lead Time Analysis")
@@ -1434,4 +1567,5 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
