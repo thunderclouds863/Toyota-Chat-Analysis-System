@@ -38,7 +38,7 @@ class Config:
     
     # Abandoned detection
     ABANDONED_TIMEOUT_MINUTES = 30  # 30 menit tanpa response dari customer
-    CUSTOMER_LEAVE_TIMEOUT = 30  # 30 menit untuk detect customer leave
+    CUSTOMER_LEAVE_TIMEOUT = 3  # 3 menit untuk detect customer leave
     
     # Keywords
     TICKET_REOPENED_KEYWORD = "Ticket Has Been Reopened by"
@@ -201,7 +201,7 @@ class DataPreprocessor:
             print("⚠️ No complaint data or phone column not found")
             return complaint_tickets
         
-        # Extract phones dari raw data - PERBAIKAN: gunakan raw_df yang benar
+        # Extract phones dari raw data
         raw_phones = self._extract_phones_from_raw_data(raw_df)
         
         for _, complaint_row in complaint_df.iterrows():
@@ -263,6 +263,12 @@ class ConversationParser:
             'bagaimana cara', 'bisa tolong', 'mohon bantuan', 'gimana'
         ]
         
+        self.main_question_indicators = [
+            'mau tanya', 'mau nanya', 'bertanya', 'tanya dong', 'boleh tanya',
+            'minta info', 'butuh info', 'caranya', 'gimana cara', 'berapa',
+            'kapan', 'dimana', 'kenapa', 'mengapa', 'bagaimana', 'apa'
+        ]
+        
         self.operator_greeting_patterns = [
             r"selamat\s+(pagi|siang|sore|malam)",
             r"selamat\s+\w+\s+selamat\s+datang",
@@ -306,6 +312,94 @@ class ConversationParser:
         print("   ❌ No conversation start detected")
         return None
     
+    def detect_main_question(self, ticket_df):
+        """Deteksi main question pertama dari customer setelah conversation start"""
+        conversation_start = self.detect_conversation_start(ticket_df)
+        if not conversation_start:
+            return None
+            
+        # Filter messages setelah conversation start
+        conv_df = ticket_df[ticket_df['parsed_timestamp'] >= conversation_start]
+        conv_df = conv_df.sort_values('parsed_timestamp')
+        
+        # Cari pertanyaan pertama dari customer yang meaningful
+        for idx, row in conv_df.iterrows():
+            if row['Role'].lower() in ['customer', 'user', 'pelanggan']:
+                message = str(row['Message']).lower().strip()
+                if self._is_main_question(message):
+                    return {
+                        'question': row['Message'],
+                        'timestamp': row['parsed_timestamp'],
+                        'message_index': idx
+                    }
+        return None
+    
+    def _is_main_question(self, message):
+        """Check jika message adalah main question"""
+        if len(message) < 10:  # Skip terlalu pendek
+            return False
+            
+        message_lower = message.lower()
+        
+        # Skip greetings saja
+        greetings = ['halo', 'hai', 'hi', 'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam']
+        if any(message_lower.startswith(greet) for greet in greetings) and len(message_lower.split()) <= 4:
+            return False
+        
+        # Check question indicators
+        has_question_keyword = any(indicator in message_lower for indicator in self.main_question_indicators)
+        has_question_mark = '?' in message_lower
+        has_interrogative = any(word in message_lower.split() for word in ['apa', 'bagaimana', 'berapa', 'kapan', 'dimana', 'kenapa', 'bisa', 'boleh'])
+        
+        return has_question_keyword or has_question_mark or has_interrogative
+
+    def parse_conversation_after_main(self, ticket_df, main_issue):
+        """Parse Q-A pairs setelah main question"""
+        main_time = main_issue['timestamp']
+        
+        # Filter messages setelah main question
+        after_main_df = ticket_df[ticket_df['parsed_timestamp'] >= main_time]
+        after_main_df = after_main_df.sort_values('parsed_timestamp').reset_index(drop=True)
+        
+        # Untuk simplicity, kita buat satu Q-A pair untuk main question
+        qa_pairs = []
+        
+        # Cari jawaban untuk main question
+        operator_replies = after_main_df[
+            (after_main_df['parsed_timestamp'] > main_time) &
+            (after_main_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+        ]
+        
+        if not operator_replies.empty:
+            first_reply = operator_replies.iloc[0]
+            lead_time = (first_reply['parsed_timestamp'] - main_time).total_seconds()
+            
+            qa_pairs.append({
+                'question': main_issue['question'],
+                'question_time': main_time,
+                'answer': first_reply['Message'],
+                'answer_time': first_reply['parsed_timestamp'],
+                'answer_role': first_reply['Role'],
+                'lead_time_seconds': lead_time,
+                'lead_time_minutes': round(lead_time / 60, 2),
+                'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
+                'is_answered': True
+            })
+        else:
+            qa_pairs.append({
+                'question': main_issue['question'],
+                'question_time': main_time,
+                'answer': 'NO_ANSWER',
+                'answer_time': None,
+                'answer_role': None,
+                'lead_time_seconds': None,
+                'lead_time_minutes': None,
+                'lead_time_hhmmss': None,
+                'is_answered': False
+            })
+        
+        return qa_pairs
+
     def parse_conversation(self, ticket_df):
         """Parse conversation menjadi Q-A pairs dengan logic baru"""
         conversation_start = self.detect_conversation_start(ticket_df)
@@ -334,7 +428,7 @@ class ConversationParser:
             message = str(row['Message'])
             timestamp = row['parsed_timestamp']
             
-            # PERBAIKAN: Handle semua role termasuk Ticket Automation dan Blank
+            # Handle semua role termasuk Ticket Automation dan Blank
             if role in ['customer', 'user', 'pelanggan']:
                 # Process customer questions
                 if self._is_meaningful_question(message):
@@ -343,7 +437,7 @@ class ConversationParser:
                     current_question = message
                     question_time = timestamp
             
-            # PERBAIKAN: Juga process Ticket Automation dan Blank roles untuk context
+            # Juga process Ticket Automation dan Blank roles untuk context
             elif role in ['operator', 'agent', 'admin', 'cs', 'ticket automation', 'blank']:
                 if current_question and role in ['operator', 'agent', 'admin', 'cs']:
                     # Only operators can answer questions
@@ -517,7 +611,7 @@ class ReplyAnalyzer:
         first_reply_found = first_reply is not None
         final_reply_found = True  # Untuk complaint, selalu dianggap ada final reply dari system
         
-        # PERBAIKAN: Pass reply status ke customer leave check
+        # Pass reply status ke customer leave check
         customer_leave = self._check_customer_leave(ticket_df, first_reply_found, final_reply_found)
         
         analysis_result = {
@@ -550,7 +644,7 @@ class ReplyAnalyzer:
         first_reply_found = first_reply is not None
         final_reply_found = final_reply is not None
         
-        # PERBAIKAN: Pass reply status ke customer leave check
+        # Pass reply status ke customer leave check
         customer_leave = self._check_customer_leave(ticket_df, first_reply_found, final_reply_found)
         
         analysis_result = {
@@ -564,22 +658,35 @@ class ReplyAnalyzer:
         return analysis_result
     
     def _analyze_normal_replies(self, ticket_df, qa_pairs, main_issue):
-        """Analyze replies untuk normal tickets"""
-        # Cari operator reply yang mengandung solusi (langsung dianggap final reply)
+        """Analyze replies untuk normal tickets - PERBAIKAN: Skip jika ada jeda ticket reopened"""
+        # CEK DULU: Jika ada ticket reopened, jangan dianggap normal
+        if self._has_ticket_reopened(ticket_df):
+            print("   ⚠️  Ticket has reopened keyword, cannot be normal")
+            return self._analyze_serious_replies(ticket_df, qa_pairs, main_issue)
+        
+        # Cari operator reply yang mengandung solusi TANPA jeda ticket reopened
         final_reply = self._find_normal_final_reply(ticket_df, main_issue['question_time'])
         
-        first_reply_found = False  # Normal tidak butuh first reply
+        # Untuk normal, harus langsung dijawab tanpa jeda berarti
+        if final_reply:
+            # Cek waktu response (dalam menit)
+            response_time_minutes = final_reply.get('lead_time_minutes', 999)
+            if response_time_minutes <= config.NORMAL_THRESHOLD:  # Dalam 5 menit
+                print(f"   ✅ NORMAL ticket - quick response ({response_time_minutes} min)")
+            else:
+                print(f"   ⚠️  Slow response ({response_time_minutes} min), but classified as normal")
+        
+        first_reply_found = False
         final_reply_found = final_reply is not None
         
-        # PERBAIKAN: Pass reply status ke customer leave check
         customer_leave = self._check_customer_leave(ticket_df, first_reply_found, final_reply_found)
         
         analysis_result = {
             'issue_type': 'normal',
-            'first_reply': None,  # Normal tidak butuh first reply
+            'first_reply': None,
             'final_reply': final_reply,
             'customer_leave': customer_leave,
-            'requirement_compliant': final_reply is not None
+            'requirement_compliant': final_reply is not None and not customer_leave
         }
         
         return analysis_result
@@ -659,29 +766,42 @@ class ReplyAnalyzer:
         return None
     
     def _find_normal_final_reply(self, ticket_df, question_time):
-        """Cari normal final reply (mengandung solusi) - PERBAIKAN: skip generic replies"""
+        """Cari normal final reply - PERBAIKAN: Skip generic/penutup messages"""
         operator_messages = ticket_df[
             (ticket_df['parsed_timestamp'] > question_time) &
             (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
         ].sort_values('parsed_timestamp')
         
-        # Skip patterns untuk reply yang tidak mengandung solusi
-        non_solution_patterns = [
-        'apabila sudah cukup', 'apakah sudah cukup', 'apakah informasinya sudah cukup',
-        'terima kasih telah menghubungi', 'selamat beraktivitas', 'goodbye', 'bye', 'sampai jumpa',
-        'baik bapak', 'baik ibu', 'semoga membantu', 'jika ada pertanyaan', 'jika masih ada pertanyaan',
-        'mohon diclose', 'terima kasih', 'thank you', 'semoga puas', 'senang bisa membantu'
+        if operator_messages.empty:
+            return None
+        
+        # Patterns untuk skip (generic/penutup messages)
+        skip_patterns = [
+            'apabila sudah cukup', 'apakah sudah cukup', 'apakah informasinya sudah cukup',
+            'terima kasih telah menghubungi', 'selamat beraktivitas', 'goodbye', 'bye', 
+            'sampai jumpa', 'baik bapak', 'baik ibu', 'semoga membantu', 
+            'jika ada pertanyaan', 'jika masih ada pertanyaan', 'mohon diclose',
+            'terima kasih', 'thank you', 'semoga puas', 'senang bisa membantu',
+            'ada yang bisa dibantu', 'boleh dibantu', 'bisa dibantu',
+            'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam'
         ]
         
-        # Cari yang mengandung solusi dan BUKAN generic reply
+        solution_keywords = [
+            'solusi', 'jawaban', 'caranya', 'prosedur', 'bisa menghubungi',
+            'silakan menghubungi', 'disarankan untuk', 'rekomendasi', 'langkah',
+            'cara', 'informasi', 'detail', 'penjelasan', 'keterangan'
+        ]
+        
+        # Cari reply yang mengandung solusi dan BUKAN generic reply
         for _, msg in operator_messages.iterrows():
             message = str(msg['Message']).lower()
             
-            # Skip jika mengandung pattern non-solution
-            if any(pattern in message for pattern in non_solution_patterns):
+            # Skip jika mengandung pattern generic/penutup
+            if any(pattern in message for pattern in skip_patterns):
                 continue
                 
-            if self._contains_solution_keyword(msg['Message']):
+            # Harus mengandung solution keyword
+            if any(keyword in message for keyword in solution_keywords):
                 lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
                 
                 return {
@@ -690,10 +810,26 @@ class ReplyAnalyzer:
                     'lead_time_seconds': lead_time,
                     'lead_time_minutes': round(lead_time / 60, 2),
                     'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
-                    'note': 'Contains solution'
+                    'note': 'Contains solution - normal final reply'
                 }
         
-    
+        # Fallback: ambil operator reply pertama yang tidak generic
+        for _, msg in operator_messages.iterrows():
+            message = str(msg['Message']).lower()
+            if not any(pattern in message for pattern in skip_patterns):
+                lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
+                
+                return {
+                    'message': msg['Message'],
+                    'timestamp': msg['parsed_timestamp'],
+                    'lead_time_seconds': lead_time,
+                    'lead_time_minutes': round(lead_time / 60, 2),
+                    'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
+                    'note': 'First non-generic operator reply'
+                }
+        
+        return None
+
     def _find_ticket_reopened_time(self, ticket_df):
         """Cari timestamp ketika ticket di-reopen"""
         for _, row in ticket_df.iterrows():
@@ -716,28 +852,50 @@ class ReplyAnalyzer:
         return any(keyword in message_lower for keyword in solution_keywords)
     
     def _check_customer_leave(self, ticket_df, first_reply_found, final_reply_found):
-        """Cek apakah customer leave conversation - LOGIC BARU"""
+        """Cek customer leave - PERBAIKAN: Logika yang lebih akurat"""
         # Cari keyword customer leave dari ticket automation
         has_leave_keyword = False
+        leave_time = None
+        
         for _, row in ticket_df.iterrows():
             role = str(row['Role']).lower()
             message = str(row['Message'])
             
             if 'ticket automation' in role and config.CUSTOMER_LEAVE_KEYWORD in message:
                 has_leave_keyword = True
+                leave_time = row['parsed_timestamp']
                 break
         
-        # PERBAIKAN: Hanya dianggap customer leave jika:
-        # 1. Ada keyword customer leave DAN
-        # 2. Tidak ada first reply ATAU tidak ada final reply
-        if has_leave_keyword and (not first_reply_found or not final_reply_found):
-            print("   🚶 Customer leave detected (no proper replies)")
-            return True
-        elif has_leave_keyword and first_reply_found and final_reply_found:
-            print("   ⚠️  Customer leave keyword found but replies exist - NOT counted as leave")
+        if not has_leave_keyword:
             return False
+        
+        # Cari last operator message sebelum leave
+        operator_messages = ticket_df[
+            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False)) &
+            (ticket_df['parsed_timestamp'] < leave_time)
+        ]
+        
+        if operator_messages.empty:
+            last_operator_time = None
         else:
-            return False
+            last_operator_time = operator_messages['parsed_timestamp'].max()
+        
+        # PERBAIKAN: Customer leave jika:
+        # 1. Ada keyword customer leave DAN
+        # 2. (Tidak ada first reply ATAU tidak ada final reply) ATAU
+        # 3. Ada jeda > 3 menit dari last operator message ke leave time
+        if not first_reply_found or not final_reply_found:
+            print("   🚶 Customer leave detected (missing replies)")
+            return True
+        
+        if last_operator_time:
+            time_gap = (leave_time - last_operator_time).total_seconds() / 60
+            if time_gap >= config.CUSTOMER_LEAVE_TIMEOUT:  # 3 menit sesuai requirement
+                print(f"   🚶 Customer leave detected ({time_gap:.1f} min gap)")
+                return True
+        
+        print("   ⚠️  Customer leave keyword found but conditions not met")
+        return False
     
     def _seconds_to_hhmmss(self, seconds):
         """Convert seconds to HH:MM:SS format"""
@@ -816,25 +974,25 @@ class CompleteAnalysisPipeline:
         return self.results, self.analysis_stats
     
     def analyze_single_ticket(self, ticket_df, ticket_id):
-        """Analisis lengkap untuk single ticket"""
+        """Analisis lengkap untuk single ticket - PERBAIKAN: Gunakan main question detection baru"""
         print(f"🎯 Analyzing Ticket: {ticket_id}")
         
         try:
-            # Step 1: Parse Q-A pairs
-            qa_pairs = self.parser.parse_conversation(ticket_df)
-            
-            if not qa_pairs:
-                return self._create_ticket_result(ticket_id, "failed", "No Q-A pairs detected", {})
-            
-            print(f"   ✓ Found {len(qa_pairs)} Q-A pairs")
-            
-            # Step 2: Detect main issue
-            main_issue = self.issue_detector.detect_main_issue(qa_pairs)
+            # Step 1: Parse conversation dan cari MAIN QUESTION
+            main_issue = self.parser.detect_main_question(ticket_df)
             
             if not main_issue:
-                return self._create_ticket_result(ticket_id, "failed", "No main issue detected", {})
+                print("   ❌ No main question detected")
+                return self._create_ticket_result(ticket_id, "failed", "No main question detected", {})
             
-            print(f"   ✓ Main issue detected: {main_issue['question'][:50]}...")
+            print(f"   ✓ Main question detected: {main_issue['question'][:50]}...")
+            
+            # Step 2: Parse Q-A pairs berdasarkan main question
+            qa_pairs = self.parser.parse_conversation_after_main(ticket_df, main_issue)
+            
+            if not qa_pairs:
+                print("   ⚠️  No Q-A pairs after main question")
+                # Tetap lanjut dengan main question saja
             
             # Step 3: Analyze replies dengan LOGIC BARU
             if not hasattr(self, 'reply_analyzer'):
@@ -849,7 +1007,7 @@ class CompleteAnalysisPipeline:
                 ticket_id, ticket_df, qa_pairs, main_issue, reply_analysis
             )
             
-            print(f"   ✅ Analysis completed")
+            print(f"   ✅ Analysis completed - {reply_analysis['issue_type'].upper()}")
             return result
             
         except Exception as e:
@@ -1028,7 +1186,7 @@ class CompleteAnalysisPipeline:
             print(f"   • First Reply Found: {eff.get('first_reply_found_rate', 0)*100:.1f}%")
             print(f"   • Final Reply Found: {eff.get('final_reply_found_rate', 0)*100:.1f}%")
             print(f"   • Customer Leave Cases: {eff.get('customer_leave_cases', 0)}")
-            
+
 # Results Exporter
 class ResultsExporter:
     def __init__(self):
@@ -1191,15 +1349,6 @@ print("   ✓ New role handling (Ticket Automation & Blank)")
 print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
+print("   ✓ Improved main question detection")
+print("   ✓ Enhanced customer leave logic")
 print("=" * 60)
-
-
-
-
-
-
-
-
-
-
-
