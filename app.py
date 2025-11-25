@@ -271,7 +271,7 @@ def main_interface():
             """)
 
 def run_enhanced_analysis(uploaded_raw_file, uploaded_complaint_file, max_tickets):
-    """Run enhanced analysis dengan kedua file"""
+    """Run enhanced analysis dengan kedua file - FIXED VERSION"""
     try:
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -288,23 +288,23 @@ def run_enhanced_analysis(uploaded_raw_file, uploaded_complaint_file, max_ticket
         complaint_df = pd.read_excel(uploaded_complaint_file)
         st.success(f"✅ Loaded {len(complaint_df)} rows from complaint data")
         
-        # Step 2: Initialize Pipeline dengan Complaint Data
-        status_text.text("🔧 Initializing enhanced analysis pipeline...")
-        progress_bar.progress(40)
-        
-        # Simpan complaint file temporary
-        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_complaint:
-            complaint_df.to_excel(tmp_complaint.name, index=False)
-            pipeline = CompleteAnalysisPipeline(complaint_data_path=tmp_complaint.name)
-        
-        # Step 3: Preprocess Data
+        # Step 2: Preprocess Data
         status_text.text("🔄 Preprocessing conversation data...")
-        progress_bar.progress(60)
+        progress_bar.progress(40)
         
         preprocessor = DataPreprocessor()
         processed_df = preprocessor.clean_data(raw_df)
         
-        # Step 4: Run Analysis
+        # Step 3: Initialize Pipeline dengan Data yang Sudah Di-load
+        status_text.text("🔧 Initializing enhanced analysis pipeline...")
+        progress_bar.progress(60)
+        
+        # PERBAIKAN: Simpan complaint file temporary dan initialize pipeline
+        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_complaint:
+            complaint_df.to_excel(tmp_complaint.name, index=False)
+            pipeline = CompleteAnalysisPipeline(complaint_data_path=tmp_complaint.name)
+        
+        # Step 4: Run Analysis - PERBAIKAN: Pass processed_df yang sudah benar
         status_text.text("🔍 Analyzing conversations with enhanced logic...")
         progress_bar.progress(80)
         
@@ -1202,4 +1202,5 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
