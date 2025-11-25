@@ -747,21 +747,31 @@ class CompleteAnalysisPipeline:
         self.parser = ConversationParser()
         self.issue_detector = MainIssueDetector()
         self.complaint_tickets = {}
-        self.complaint_data_path = complaint_data_path  # Simpan path untuk nanti
+        self.complaint_data_path = complaint_data_path
         
         print("🚀 Complete Analysis Pipeline Initialized")
+    
+    def _create_ticket_result(self, ticket_id, status, reason, extra_data):
+        """Create standardized result object - METHOD YANG HILANG"""
+        result = {
+            'ticket_id': ticket_id,
+            'status': status,
+            'failure_reason': reason if status == 'failed' else None,
+            'analysis_timestamp': datetime.now()
+        }
+        result.update(extra_data)
+        return result
     
     def analyze_all_tickets(self, df, max_tickets=None):
         """Analisis semua tickets dengan complaint matching yang benar"""
         print("🚀 STARTING COMPLETE ANALYSIS PIPELINE")
         
-        # PERBAIKAN: Load complaint data di sini setelah punya raw_df
+        # Load complaint data setelah punya raw_df
         if self.complaint_data_path and os.path.exists(self.complaint_data_path):
             complaint_df = self.preprocessor.load_complaint_data(self.complaint_data_path)
-            # PERBAIKAN: Pass raw_df yang benar untuk matching
             self.complaint_tickets = self.preprocessor.match_complaint_tickets(df, complaint_df)
         
-        # PERBAIKAN: Initialize reply analyzer dengan complaint_tickets yang sudah di-load
+        # Initialize reply analyzer dengan complaint_tickets yang sudah di-load
         self.reply_analyzer = ReplyAnalyzer(self.complaint_tickets)
         
         ticket_ids = df['Ticket Number'].unique()
@@ -819,7 +829,6 @@ class CompleteAnalysisPipeline:
             print(f"   ✓ Main issue detected: {main_issue['question'][:50]}...")
             
             # Step 3: Analyze replies dengan LOGIC BARU
-            # PERBAIKAN: Pastikan reply_analyzer sudah di-initialize
             if not hasattr(self, 'reply_analyzer'):
                 self.reply_analyzer = ReplyAnalyzer(self.complaint_tickets)
                 
@@ -839,96 +848,129 @@ class CompleteAnalysisPipeline:
             error_msg = f"Error: {str(e)}"
             print(f"   ❌ Analysis failed: {error_msg}")
             return self._create_ticket_result(ticket_id, "failed", error_msg, {})
-
-# Results Exporter
-class ResultsExporter:
-    def __init__(self):
-        self.output_dir = "output/"
-        Path(self.output_dir).mkdir(exist_ok=True)
     
-    def export_comprehensive_results(self, results, stats):
-        """Export results ke Excel"""
-        try:
-            output_path = f"{self.output_dir}analysis_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    def _compile_ticket_result(self, ticket_id, ticket_df, qa_pairs, main_issue, reply_analysis):
+        """Compile ticket result"""
+        # Hitung quality score
+        quality_score = 0
+        if reply_analysis['first_reply']:
+            quality_score += 2
+        if reply_analysis['final_reply']:
+            quality_score += 2
+        if not reply_analysis['customer_leave']:
+            quality_score += 1
+        
+        # Tentukan performance rating
+        if reply_analysis['requirement_compliant']:
+            performance_rating = 'good'
+        else:
+            performance_rating = 'fair'
+        
+        result = {
+            'ticket_id': ticket_id,
+            'status': 'success',
+            'analysis_timestamp': datetime.now(),
             
-            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-                # Detailed results
-                detailed_data = []
-                for result in results:
-                    if result['status'] == 'success':
-                        detailed_data.append({
-                            'Ticket_ID': result['ticket_id'],
-                            'Issue_Type': result['final_issue_type'],
-                            'Main_Question': result['main_question'],
-                            'First_Reply_Found': result['first_reply_found'],
-                            'Final_Reply_Found': result['final_reply_found'],
-                            'First_Reply_Lead_Time_Min': result.get('first_reply_lead_time_minutes'),
-                            'Final_Reply_Lead_Time_Min': result.get('final_reply_lead_time_minutes'),
-                            'Final_Reply_Lead_Time_Days': result.get('final_reply_lead_time_days'),
-                            'Performance_Rating': result['performance_rating'],
-                            'Quality_Score': result['quality_score'],
-                            'Customer_Leave': result['customer_leave']
-                        })
-                
-                if detailed_data:
-                    df_detailed = pd.DataFrame(detailed_data)
-                    df_detailed.to_excel(writer, sheet_name='Detailed_Results', index=False)
-                
-                # Summary statistics
-                summary_data = self._create_summary_data(stats)
-                summary_df = pd.DataFrame(summary_data)
-                summary_df.to_excel(writer, sheet_name='Summary_Statistics', index=False, header=False)
+            # Conversation info
+            'total_messages': len(ticket_df),
+            'total_qa_pairs': len(qa_pairs),
+            'answered_pairs': sum(1 for pair in qa_pairs if pair['is_answered']),
+            'customer_leave': reply_analysis['customer_leave'],
             
-            print(f"💾 Results exported to: {output_path}")
-            return output_path
+            # Main issue analysis
+            'main_question': main_issue['question'],
+            'main_question_time': main_issue['question_time'],
+            'final_issue_type': reply_analysis['issue_type'],
             
-        except Exception as e:
-            print(f"❌ Error exporting results: {e}")
-            return None
+            # Reply analysis
+            'first_reply_found': reply_analysis['first_reply'] is not None,
+            'final_reply_found': reply_analysis['final_reply'] is not None,
+            'first_reply_message': reply_analysis['first_reply']['message'] if reply_analysis['first_reply'] else None,
+            'first_reply_time': reply_analysis['first_reply']['timestamp'] if reply_analysis['first_reply'] else None,
+            'final_reply_message': reply_analysis['final_reply']['message'] if reply_analysis['final_reply'] else None,
+            'final_reply_time': reply_analysis['final_reply']['timestamp'] if reply_analysis['final_reply'] else None,
+            
+            # Lead times
+            'first_reply_lead_time_minutes': reply_analysis['first_reply'].get('lead_time_minutes') if reply_analysis['first_reply'] else None,
+            'final_reply_lead_time_minutes': reply_analysis['final_reply'].get('lead_time_minutes') if reply_analysis['final_reply'] else None,
+            'first_reply_lead_time_hhmmss': reply_analysis['first_reply'].get('lead_time_hhmmss') if reply_analysis['first_reply'] else None,
+            'final_reply_lead_time_hhmmss': reply_analysis['final_reply'].get('lead_time_hhmmss') if reply_analysis['final_reply'] else None,
+            
+            # Untuk complaint
+            'final_reply_lead_time_days': reply_analysis['final_reply'].get('lead_time_days') if reply_analysis['final_reply'] else None,
+            
+            # Performance metrics
+            'performance_rating': performance_rating,
+            'quality_score': quality_score,
+            'quality_rating': 'good' if quality_score >= 4 else 'fair' if quality_score >= 2 else 'poor',
+            'requirement_compliant': reply_analysis['requirement_compliant'],
+            
+            # Raw data
+            '_raw_qa_pairs': qa_pairs,
+            '_raw_reply_analysis': reply_analysis
+        }
+        
+        return result
     
-    def _create_summary_data(self, stats):
-        """Create summary data untuk Excel"""
-        summary_data = [
-            ['ANALYSIS SUMMARY REPORT', ''],
-            ['Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-            ['', ''],
-            ['OVERALL STATISTICS', ''],
-            ['Total Tickets', stats['total_tickets']],
-            ['Successful Analysis', stats['successful_analysis']],
-            ['Failed Analysis', stats['failed_analysis']],
-            ['Success Rate', f"{stats['success_rate']*100:.1f}%"],
-            ['', '']
-        ]
+    def _calculate_stats(self, total_tickets):
+        """Hitung statistics dari results"""
+        successful = [r for r in self.results if r['status'] == 'success']
+        failed = [r for r in self.results if r['status'] == 'failed']
+        
+        stats = {
+            'total_tickets': len(self.results),
+            'successful_analysis': len(successful),
+            'failed_analysis': len(failed),
+            'success_rate': len(successful) / len(self.results) if self.results else 0
+        }
+        
+        if successful:
+            # Issue type distribution
+            issue_types = [r['final_issue_type'] for r in successful]
+            stats['issue_type_distribution'] = dict(Counter(issue_types))
+            
+            # Performance metrics
+            performance_ratings = [r['performance_rating'] for r in successful]
+            stats['performance_distribution'] = dict(Counter(performance_ratings))
+            
+            # Lead time statistics
+            first_lead_times = [r['first_reply_lead_time_minutes'] for r in successful if r.get('first_reply_lead_time_minutes')]
+            final_lead_times = [r['final_reply_lead_time_minutes'] for r in successful if r.get('final_reply_lead_time_minutes')]
+            
+            stats['lead_time_stats'] = {
+                'first_reply_avg_minutes': np.mean(first_lead_times) if first_lead_times else 0,
+                'final_reply_avg_minutes': np.mean(final_lead_times) if final_lead_times else 0,
+                'first_reply_samples': len(first_lead_times),
+                'final_reply_samples': len(final_lead_times)
+            }
+            
+            # Reply effectiveness
+            stats['reply_effectiveness'] = {
+                'first_reply_found_rate': sum(1 for r in successful if r['first_reply_found']) / len(successful),
+                'final_reply_found_rate': sum(1 for r in successful if r['final_reply_found']) / len(successful),
+                'customer_leave_cases': sum(1 for r in successful if r['customer_leave'])
+            }
+        
+        return stats
+    
+    def _print_summary_report(self):
+        """Print summary report"""
+        stats = self.analysis_stats
+        
+        print(f"📊 ANALYSIS SUMMARY REPORT")
+        print(f"   • Total Tickets: {stats['total_tickets']}")
+        print(f"   • Successful Analysis: {stats['successful_analysis']} ({stats['success_rate']*100:.1f}%)")
         
         if 'issue_type_distribution' in stats:
-            summary_data.append(['ISSUE TYPE DISTRIBUTION', ''])
-            for issue_type, count in stats['issue_type_distribution'].items():
-                summary_data.append([f'{issue_type.title()} Issues', count])
-            summary_data.append(['', ''])
+            print(f"   • Issue Types: {stats['issue_type_distribution']}")
         
         if 'lead_time_stats' in stats:
             lt_stats = stats['lead_time_stats']
-            summary_data.append(['LEAD TIME STATISTICS', ''])
-            summary_data.append(['First Reply Avg (min)', f"{lt_stats['first_reply_avg_minutes']:.1f}"])
-            summary_data.append(['Final Reply Avg (min)', f"{lt_stats['final_reply_avg_minutes']:.1f}"])
-            summary_data.append(['First Reply Samples', lt_stats['first_reply_samples']])
-            summary_data.append(['Final Reply Samples', lt_stats['final_reply_samples']])
-            summary_data.append(['', ''])
+            print(f"   • Avg First Reply: {lt_stats['first_reply_avg_minutes']:.1f} min")
+            print(f"   • Avg Final Reply: {lt_stats['final_reply_avg_minutes']:.1f} min")
         
         if 'reply_effectiveness' in stats:
             eff = stats['reply_effectiveness']
-            summary_data.append(['REPLY EFFECTIVENESS', ''])
-            summary_data.append(['First Reply Found Rate', f"{eff['first_reply_found_rate']*100:.1f}%"])
-            summary_data.append(['Final Reply Found Rate', f"{eff['final_reply_found_rate']*100:.1f}%"])
-            summary_data.append(['Customer Leave Cases', eff['customer_leave_cases']])
-        
-        return summary_data
-
-# Initialize Pipeline
-print("✅ ENHANCED Analysis Pipeline Ready!")
-print("   ✓ New role handling (Ticket Automation & Blank)")
-print("   ✓ New issue type detection logic")
-print("   ✓ Complaint ticket matching")
-print("   ✓ Ticket reopened detection")
-print("=" * 60)
-
+            print(f"   • First Reply Found: {eff['first_reply_found_rate']*100:.1f}%")
+            print(f"   • Final Reply Found: {eff['final_reply_found_rate']*100:.1f}%")
+            print(f"   • Customer Leave Cases: {eff['customer_leave_cases']}")
