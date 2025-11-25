@@ -13,7 +13,7 @@ import traceback
 # Import analysis modules
 sys.path.append('.')
 try:
-    from chat_analyzer import (
+    from Chat_Analyzer_System import (
         DataPreprocessor, CompleteAnalysisPipeline, 
         ResultsExporter, Config
     )
@@ -1202,3 +1202,4 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
