@@ -752,7 +752,7 @@ class CompleteAnalysisPipeline:
         print("🚀 Complete Analysis Pipeline Initialized")
     
     def _create_ticket_result(self, ticket_id, status, reason, extra_data):
-        """Create standardized result object - METHOD YANG HILANG"""
+        """Create standardized result object"""
         result = {
             'ticket_id': ticket_id,
             'status': status,
@@ -849,85 +849,85 @@ class CompleteAnalysisPipeline:
             print(f"   ❌ Analysis failed: {error_msg}")
             return self._create_ticket_result(ticket_id, "failed", error_msg, {})
     
-def _compile_ticket_result(self, ticket_id, ticket_df, qa_pairs, main_issue, reply_analysis):
-    """Compile ticket result - FIXED: Ensure numeric lead times"""
-    # Hitung quality score
-    quality_score = 0
-    if reply_analysis['first_reply']:
-        quality_score += 2
-    if reply_analysis['final_reply']:
-        quality_score += 2
-    if not reply_analysis['customer_leave']:
-        quality_score += 1
+    def _compile_ticket_result(self, ticket_id, ticket_df, qa_pairs, main_issue, reply_analysis):
+        """Compile ticket result - FIXED: Ensure numeric lead times"""
+        # Hitung quality score
+        quality_score = 0
+        if reply_analysis['first_reply']:
+            quality_score += 2
+        if reply_analysis['final_reply']:
+            quality_score += 2
+        if not reply_analysis['customer_leave']:
+            quality_score += 1
+        
+        # Tentukan performance rating
+        if reply_analysis['requirement_compliant']:
+            performance_rating = 'good'
+        else:
+            performance_rating = 'fair'
+        
+        # FIXED: Ensure lead times are numeric or None
+        first_lead_minutes = None
+        final_lead_minutes = None
+        
+        if reply_analysis['first_reply'] and reply_analysis['first_reply'].get('lead_time_minutes'):
+            try:
+                first_lead_minutes = float(reply_analysis['first_reply']['lead_time_minutes'])
+            except (ValueError, TypeError):
+                first_lead_minutes = None
+        
+        if reply_analysis['final_reply'] and reply_analysis['final_reply'].get('lead_time_minutes'):
+            try:
+                final_lead_minutes = float(reply_analysis['final_reply']['lead_time_minutes'])
+            except (ValueError, TypeError):
+                final_lead_minutes = None
+        
+        result = {
+            'ticket_id': ticket_id,
+            'status': 'success',
+            'analysis_timestamp': datetime.now(),
+            
+            # Conversation info
+            'total_messages': len(ticket_df),
+            'total_qa_pairs': len(qa_pairs),
+            'answered_pairs': sum(1 for pair in qa_pairs if pair['is_answered']),
+            'customer_leave': reply_analysis['customer_leave'],
+            
+            # Main issue analysis
+            'main_question': main_issue['question'],
+            'main_question_time': main_issue['question_time'],
+            'final_issue_type': reply_analysis['issue_type'],
+            
+            # Reply analysis
+            'first_reply_found': reply_analysis['first_reply'] is not None,
+            'final_reply_found': reply_analysis['final_reply'] is not None,
+            'first_reply_message': reply_analysis['first_reply']['message'] if reply_analysis['first_reply'] else None,
+            'first_reply_time': reply_analysis['first_reply']['timestamp'] if reply_analysis['first_reply'] else None,
+            'final_reply_message': reply_analysis['final_reply']['message'] if reply_analysis['final_reply'] else None,
+            'final_reply_time': reply_analysis['final_reply']['timestamp'] if reply_analysis['final_reply'] else None,
+            
+            # Lead times - FIXED: Use numeric values
+            'first_reply_lead_time_minutes': first_lead_minutes,
+            'final_reply_lead_time_minutes': final_lead_minutes,
+            'first_reply_lead_time_hhmmss': reply_analysis['first_reply'].get('lead_time_hhmmss') if reply_analysis['first_reply'] else None,
+            'final_reply_lead_time_hhmmss': reply_analysis['final_reply'].get('lead_time_hhmmss') if reply_analysis['final_reply'] else None,
+            
+            # Untuk complaint
+            'final_reply_lead_time_days': reply_analysis['final_reply'].get('lead_time_days') if reply_analysis['final_reply'] else None,
+            
+            # Performance metrics
+            'performance_rating': performance_rating,
+            'quality_score': quality_score,
+            'quality_rating': 'good' if quality_score >= 4 else 'fair' if quality_score >= 2 else 'poor',
+            'requirement_compliant': reply_analysis['requirement_compliant'],
+            
+            # Raw data
+            '_raw_qa_pairs': qa_pairs,
+            '_raw_reply_analysis': reply_analysis
+        }
+        
+        return result
     
-    # Tentukan performance rating
-    if reply_analysis['requirement_compliant']:
-        performance_rating = 'good'
-    else:
-        performance_rating = 'fair'
-    
-    # FIXED: Ensure lead times are numeric or None
-    first_lead_minutes = None
-    final_lead_minutes = None
-    
-    if reply_analysis['first_reply'] and reply_analysis['first_reply'].get('lead_time_minutes'):
-        try:
-            first_lead_minutes = float(reply_analysis['first_reply']['lead_time_minutes'])
-        except (ValueError, TypeError):
-            first_lead_minutes = None
-    
-    if reply_analysis['final_reply'] and reply_analysis['final_reply'].get('lead_time_minutes'):
-        try:
-            final_lead_minutes = float(reply_analysis['final_reply']['lead_time_minutes'])
-        except (ValueError, TypeError):
-            final_lead_minutes = None
-    
-    result = {
-        'ticket_id': ticket_id,
-        'status': 'success',
-        'analysis_timestamp': datetime.now(),
-        
-        # Conversation info
-        'total_messages': len(ticket_df),
-        'total_qa_pairs': len(qa_pairs),
-        'answered_pairs': sum(1 for pair in qa_pairs if pair['is_answered']),
-        'customer_leave': reply_analysis['customer_leave'],
-        
-        # Main issue analysis
-        'main_question': main_issue['question'],
-        'main_question_time': main_issue['question_time'],
-        'final_issue_type': reply_analysis['issue_type'],
-        
-        # Reply analysis
-        'first_reply_found': reply_analysis['first_reply'] is not None,
-        'final_reply_found': reply_analysis['final_reply'] is not None,
-        'first_reply_message': reply_analysis['first_reply']['message'] if reply_analysis['first_reply'] else None,
-        'first_reply_time': reply_analysis['first_reply']['timestamp'] if reply_analysis['first_reply'] else None,
-        'final_reply_message': reply_analysis['final_reply']['message'] if reply_analysis['final_reply'] else None,
-        'final_reply_time': reply_analysis['final_reply']['timestamp'] if reply_analysis['final_reply'] else None,
-        
-        # Lead times - FIXED: Use numeric values
-        'first_reply_lead_time_minutes': first_lead_minutes,
-        'final_reply_lead_time_minutes': final_lead_minutes,
-        'first_reply_lead_time_hhmmss': reply_analysis['first_reply'].get('lead_time_hhmmss') if reply_analysis['first_reply'] else None,
-        'final_reply_lead_time_hhmmss': reply_analysis['final_reply'].get('lead_time_hhmmss') if reply_analysis['final_reply'] else None,
-        
-        # Untuk complaint
-        'final_reply_lead_time_days': reply_analysis['final_reply'].get('lead_time_days') if reply_analysis['final_reply'] else None,
-        
-        # Performance metrics
-        'performance_rating': performance_rating,
-        'quality_score': quality_score,
-        'quality_rating': 'good' if quality_score >= 4 else 'fair' if quality_score >= 2 else 'poor',
-        'requirement_compliant': reply_analysis['requirement_compliant'],
-        
-        # Raw data
-        '_raw_qa_pairs': qa_pairs,
-        '_raw_reply_analysis': reply_analysis
-    }
-    
-    return result
-
     def _calculate_stats(self, total_tickets):
         """Hitung statistics dari results - FIXED VERSION"""
         successful = [r for r in self.results if r['status'] == 'success']
@@ -1007,6 +1007,7 @@ def _compile_ticket_result(self, ticket_id, ticket_df, qa_pairs, main_issue, rep
             print(f"   • First Reply Found: {eff['first_reply_found_rate']*100:.1f}%")
             print(f"   • Final Reply Found: {eff['final_reply_found_rate']*100:.1f}%")
             print(f"   • Customer Leave Cases: {eff['customer_leave_cases']}")
+            
 # Results Exporter
 class ResultsExporter:
     def __init__(self):
@@ -1098,5 +1099,6 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
