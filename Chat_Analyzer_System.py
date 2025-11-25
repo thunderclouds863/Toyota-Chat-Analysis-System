@@ -401,7 +401,7 @@ class ConversationParser:
                 
                 # RELAXED: Hampir semua operator message dianggap potential answer
                 # Skip hanya yang benar-benar generic
-                if self._is_generic_reply(answer):
+                if self._is_very_generic_reply(answer):
                     print(f"   ⏭️  Skipping very generic reply: {answer[:30]}...")
                     continue
                 
@@ -476,7 +476,7 @@ class ConversationParser:
         
         return has_question_indicator or has_question_mark
     
-    def _is_generic_reply(self, message):
+    def _is_very_generic_reply(self, message):
         """Hanya skip yang benar-benar generic"""
         message_lower = str(message).lower()
         
@@ -518,7 +518,7 @@ class ConversationParser:
             if not subsequent_messages.empty:
                 # Ambil operator message pertama setelah question yang tidak terlalu generic
                 for _, operator_msg in subsequent_messages.iterrows():
-                    if not self._is_generic_reply(operator_msg['Message']):
+                    if not self._is_very_generic_reply(operator_msg['Message']):
                         lead_time = (operator_msg['parsed_timestamp'] - question_time).total_seconds()
                         
                         # Update pair dengan answer yang ditemukan
@@ -1333,38 +1333,6 @@ class ReplyAnalyzer:
         print(f"   ✅ Reply analysis completed - Special cases: {analysis_result['special_cases']}")
         return first_reply, final_reply, analysis_result
 
-        def _is_generic_reply(self, message):
-        """Skip generic/bot replies"""
-        message_lower = str(message).lower()
-        return any(pattern in message_lower for pattern in self.generic_reply_patterns)
-
-    def _matches_pattern(self, text, patterns):
-        """Check if text matches any of the regex patterns"""
-        if not text:
-            return False
-        text_lower = text.lower()
-        return any(re.search(pattern, text_lower) for pattern in patterns)
-
-    def _shows_action_not_solution(self, message):
-        """Cek apakah message menunjukkan action/tindakan BUKAN solusi final"""
-        message_lower = message.lower()
-        
-        action_patterns = [
-            r'tangkapan\s+layar', r'cek', r'proses', r'kami\s+lihat', r'kami\s+periksa', 
-            r'konfirmasi', r'validasi', r'follow\s+up', r'tindak\s+lanjut', r'eskalasi',
-            r'kami\s+pelajari', r'kami\s+investigasi', r'kami\s+telusuri', r'jika\s+dilihat'
-        ]
-        
-        solution_patterns = [
-            r'solusi', r'jawaban', r'caranya', r'prosedur', r'bisa\s+menghubungi',
-            r'silakan\s+menghubungi', r'disarankan\s+untuk', r'rekomendasi'
-        ]
-        
-        has_action = self._matches_pattern(message_lower, action_patterns)
-        has_solution = self._matches_pattern(message_lower, solution_patterns)
-        
-        return has_action and not has_solution
-        
     def _find_final_reply_priority_system(self, qa_pairs, issue_type, customer_leave, first_reply):
         """Cari final reply dengan PRIORITY SYSTEM: Solution → Escalation → Last Operator → First Reply"""
         candidates = []
@@ -1374,7 +1342,7 @@ class ReplyAnalyzer:
                 answer = pair['answer']
                 
                 # Skip generic replies
-                if self._is_generic_reply(answer):
+                if self._is_very_generic_reply(answer):
                     continue
                 
                 # Skip jika ini first reply yang sama
@@ -1496,7 +1464,7 @@ class ReplyAnalyzer:
 
     def _is_meaningful_final_reply(self, message):
         """Cek apakah message meaningful untuk final reply"""
-        if self._is_generic_reply(message):
+        if self._is_very_generic_reply(message):
             return False
         
         message_lower = message.lower()
@@ -1523,7 +1491,7 @@ class ReplyAnalyzer:
                 role = pair.get('answer_role', '').lower()
                 
                 if any(keyword in role for keyword in ['operator', 'agent', 'admin', 'cs']):
-                    if not self._is_generic_reply(answer) and self._is_meaningful_final_reply(answer):
+                    if not self._is_very_generic_reply(answer) and self._is_meaningful_final_reply(answer):
                         operator_replies.append(pair)
         
         if operator_replies:
@@ -1677,7 +1645,7 @@ class ReplyAnalyzer:
                 answer = pair['answer']
                 
                 # Skip yang benar-benar generic
-                if self._is_generic_reply(answer):
+                if self._is_very_generic_reply(answer):
                     continue
                 
                 # Cek jika menunjukkan action/tindakan
@@ -1687,7 +1655,7 @@ class ReplyAnalyzer:
         
         # Fallback: ambil operator reply pertama yang tidak generic
         for pair in qa_pairs:
-            if pair['is_answered'] and not self._is_generic_reply(pair['answer']):
+            if pair['is_answered'] and not self._is_very_generic_reply(pair['answer']):
                 print(f"   🔄 First reply (fallback): {pair['answer'][:60]}...")
                 return self._create_reply_object(pair, 'first_fallback')
         
