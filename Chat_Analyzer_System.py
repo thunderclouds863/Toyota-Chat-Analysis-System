@@ -1075,12 +1075,12 @@ class ResultsExporter:
         Path(self.output_dir).mkdir(exist_ok=True)
     
     def export_comprehensive_results(self, results, stats):
-        """Export results ke Excel"""
+        """Export results ke Excel - PERBAIKAN: lebih lengkap"""
         try:
             output_path = f"{self.output_dir}analysis_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             
             with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-                # Detailed results
+                # Sheet 1: Detailed Results
                 detailed_data = []
                 for result in results:
                     if result['status'] == 'success':
@@ -1088,24 +1088,73 @@ class ResultsExporter:
                             'Ticket_ID': result['ticket_id'],
                             'Issue_Type': result['final_issue_type'],
                             'Main_Question': result['main_question'],
+                            'Main_Question_Time': result.get('main_question_time'),
                             'First_Reply_Found': result['first_reply_found'],
-                            'Final_Reply_Found': result['final_reply_found'],
+                            'First_Reply_Message': result.get('first_reply_message', '')[:500] + '...' if result.get('first_reply_message') else 'Not found',
+                            'First_Reply_Time': result.get('first_reply_time'),
                             'First_Reply_Lead_Time_Min': result.get('first_reply_lead_time_minutes'),
+                            'First_Reply_Lead_Time_Format': result.get('first_reply_lead_time_hhmmss'),
+                            'Final_Reply_Found': result['final_reply_found'],
+                            'Final_Reply_Message': result.get('final_reply_message', '')[:500] + '...' if result.get('final_reply_message') else 'Not found',
+                            'Final_Reply_Time': result.get('final_reply_time'),
                             'Final_Reply_Lead_Time_Min': result.get('final_reply_lead_time_minutes'),
                             'Final_Reply_Lead_Time_Days': result.get('final_reply_lead_time_days'),
+                            'Final_Reply_Lead_Time_Format': result.get('final_reply_lead_time_hhmmss'),
                             'Performance_Rating': result['performance_rating'],
                             'Quality_Score': result['quality_score'],
-                            'Customer_Leave': result['customer_leave']
+                            'Quality_Rating': result['quality_rating'],
+                            'Customer_Leave': result['customer_leave'],
+                            'Requirement_Compliant': result['requirement_compliant'],
+                            'Total_Messages': result['total_messages'],
+                            'Total_QA_Pairs': result['total_qa_pairs'],
+                            'Answered_Pairs': result['answered_pairs']
+                        })
+                    else:
+                        detailed_data.append({
+                            'Ticket_ID': result['ticket_id'],
+                            'Issue_Type': 'FAILED',
+                            'Main_Question': result.get('failure_reason', 'Analysis failed'),
+                            'First_Reply_Found': False,
+                            'Final_Reply_Found': False,
+                            'Performance_Rating': 'FAILED',
+                            'Quality_Score': 0
                         })
                 
                 if detailed_data:
                     df_detailed = pd.DataFrame(detailed_data)
                     df_detailed.to_excel(writer, sheet_name='Detailed_Results', index=False)
                 
-                # Summary statistics
+                # Sheet 2: Q-A Pairs Raw Data
+                qa_pairs_data = []
+                for result in results:
+                    if result['status'] == 'success' and '_raw_qa_pairs' in result:
+                        for i, qa_pair in enumerate(result['_raw_qa_pairs']):
+                            qa_pairs_data.append({
+                                'Ticket_ID': result['ticket_id'],
+                                'QA_Pair_Index': i + 1,
+                                'Question': qa_pair.get('question', ''),
+                                'Question_Time': qa_pair.get('question_time'),
+                                'Is_Answered': qa_pair.get('is_answered', False),
+                                'Answer': qa_pair.get('answer', ''),
+                                'Answer_Time': qa_pair.get('answer_time'),
+                                'Lead_Time_Minutes': qa_pair.get('lead_time_minutes'),
+                                'Lead_Time_Format': qa_pair.get('lead_time_hhmmss')
+                            })
+                
+                if qa_pairs_data:
+                    df_qa = pd.DataFrame(qa_pairs_data)
+                    df_qa.to_excel(writer, sheet_name='Raw_QA_Pairs', index=False)
+                
+                # Sheet 3: Summary Statistics
                 summary_data = self._create_summary_data(stats)
                 summary_df = pd.DataFrame(summary_data)
                 summary_df.to_excel(writer, sheet_name='Summary_Statistics', index=False, header=False)
+                
+                # Sheet 4: Performance Metrics
+                performance_data = self._create_performance_data(results)
+                if performance_data:
+                    df_perf = pd.DataFrame(performance_data)
+                    df_perf.to_excel(writer, sheet_name='Performance_Metrics', index=False)
             
             print(f"💾 Results exported to: {output_path}")
             return output_path
@@ -1114,10 +1163,32 @@ class ResultsExporter:
             print(f"❌ Error exporting results: {e}")
             return None
     
+    def _create_performance_data(self, results):
+        """Create performance metrics data"""
+        performance_data = []
+        
+        for result in results:
+            if result['status'] == 'success':
+                performance_data.append({
+                    'Ticket_ID': result['ticket_id'],
+                    'Issue_Type': result['final_issue_type'],
+                    'Performance_Rating': result['performance_rating'],
+                    'Quality_Score': result['quality_score'],
+                    'Quality_Rating': result['quality_rating'],
+                    'First_Reply_Found': result['first_reply_found'],
+                    'Final_Reply_Found': result['final_reply_found'],
+                    'Customer_Leave': result['customer_leave'],
+                    'Requirement_Compliant': result['requirement_compliant'],
+                    'Total_Messages': result['total_messages'],
+                    'Answer_Rate': f"{(result['answered_pairs'] / result['total_qa_pairs']) * 100:.1f}%" if result['total_qa_pairs'] > 0 else '0%'
+                })
+        
+        return performance_data
+    
     def _create_summary_data(self, stats):
         """Create summary data untuk Excel"""
         summary_data = [
-            ['ANALYSIS SUMMARY REPORT', ''],
+            ['ENHANCED ANALYSIS SUMMARY REPORT', ''],
             ['Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
             ['', ''],
             ['OVERALL STATISTICS', ''],
@@ -1131,7 +1202,8 @@ class ResultsExporter:
         if 'issue_type_distribution' in stats:
             summary_data.append(['ISSUE TYPE DISTRIBUTION', ''])
             for issue_type, count in stats['issue_type_distribution'].items():
-                summary_data.append([f'{issue_type.title()} Issues', count])
+                percentage = (count / stats['successful_analysis']) * 100
+                summary_data.append([f'{issue_type.title()} Issues', f'{count} ({percentage:.1f}%)'])
             summary_data.append(['', ''])
         
         if 'lead_time_stats' in stats:
@@ -1159,6 +1231,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
