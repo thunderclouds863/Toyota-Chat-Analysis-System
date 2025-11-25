@@ -974,3 +974,94 @@ class CompleteAnalysisPipeline:
             print(f"   • First Reply Found: {eff['first_reply_found_rate']*100:.1f}%")
             print(f"   • Final Reply Found: {eff['final_reply_found_rate']*100:.1f}%")
             print(f"   • Customer Leave Cases: {eff['customer_leave_cases']}")
+# Results Exporter
+class ResultsExporter:
+    def __init__(self):
+        self.output_dir = "output/"
+        Path(self.output_dir).mkdir(exist_ok=True)
+    
+    def export_comprehensive_results(self, results, stats):
+        """Export results ke Excel"""
+        try:
+            output_path = f"{self.output_dir}analysis_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            
+            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                # Detailed results
+                detailed_data = []
+                for result in results:
+                    if result['status'] == 'success':
+                        detailed_data.append({
+                            'Ticket_ID': result['ticket_id'],
+                            'Issue_Type': result['final_issue_type'],
+                            'Main_Question': result['main_question'],
+                            'First_Reply_Found': result['first_reply_found'],
+                            'Final_Reply_Found': result['final_reply_found'],
+                            'First_Reply_Lead_Time_Min': result.get('first_reply_lead_time_minutes'),
+                            'Final_Reply_Lead_Time_Min': result.get('final_reply_lead_time_minutes'),
+                            'Final_Reply_Lead_Time_Days': result.get('final_reply_lead_time_days'),
+                            'Performance_Rating': result['performance_rating'],
+                            'Quality_Score': result['quality_score'],
+                            'Customer_Leave': result['customer_leave']
+                        })
+                
+                if detailed_data:
+                    df_detailed = pd.DataFrame(detailed_data)
+                    df_detailed.to_excel(writer, sheet_name='Detailed_Results', index=False)
+                
+                # Summary statistics
+                summary_data = self._create_summary_data(stats)
+                summary_df = pd.DataFrame(summary_data)
+                summary_df.to_excel(writer, sheet_name='Summary_Statistics', index=False, header=False)
+            
+            print(f"💾 Results exported to: {output_path}")
+            return output_path
+            
+        except Exception as e:
+            print(f"❌ Error exporting results: {e}")
+            return None
+    
+    def _create_summary_data(self, stats):
+        """Create summary data untuk Excel"""
+        summary_data = [
+            ['ANALYSIS SUMMARY REPORT', ''],
+            ['Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ['', ''],
+            ['OVERALL STATISTICS', ''],
+            ['Total Tickets', stats['total_tickets']],
+            ['Successful Analysis', stats['successful_analysis']],
+            ['Failed Analysis', stats['failed_analysis']],
+            ['Success Rate', f"{stats['success_rate']*100:.1f}%"],
+            ['', '']
+        ]
+        
+        if 'issue_type_distribution' in stats:
+            summary_data.append(['ISSUE TYPE DISTRIBUTION', ''])
+            for issue_type, count in stats['issue_type_distribution'].items():
+                summary_data.append([f'{issue_type.title()} Issues', count])
+            summary_data.append(['', ''])
+        
+        if 'lead_time_stats' in stats:
+            lt_stats = stats['lead_time_stats']
+            summary_data.append(['LEAD TIME STATISTICS', ''])
+            summary_data.append(['First Reply Avg (min)', f"{lt_stats['first_reply_avg_minutes']:.1f}"])
+            summary_data.append(['Final Reply Avg (min)', f"{lt_stats['final_reply_avg_minutes']:.1f}"])
+            summary_data.append(['First Reply Samples', lt_stats['first_reply_samples']])
+            summary_data.append(['Final Reply Samples', lt_stats['final_reply_samples']])
+            summary_data.append(['', ''])
+        
+        if 'reply_effectiveness' in stats:
+            eff = stats['reply_effectiveness']
+            summary_data.append(['REPLY EFFECTIVENESS', ''])
+            summary_data.append(['First Reply Found Rate', f"{eff['first_reply_found_rate']*100:.1f}%"])
+            summary_data.append(['Final Reply Found Rate', f"{eff['final_reply_found_rate']*100:.1f}%"])
+            summary_data.append(['Customer Leave Cases', eff['customer_leave_cases']])
+        
+        return summary_data
+
+# Initialize Pipeline
+print("✅ ENHANCED Analysis Pipeline Ready!")
+print("   ✓ New role handling (Ticket Automation & Blank)")
+print("   ✓ New issue type detection logic")
+print("   ✓ Complaint ticket matching")
+print("   ✓ Ticket reopened detection")
+print("=" * 60)
