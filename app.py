@@ -663,7 +663,7 @@ def display_issue_types_tab(results, stats):
         st.info("No successful analyses to display")
 
 def _format_lead_time(result):
-    """Format lead time berdasarkan jenis issue"""
+    """Format lead time berdasarkan jenis issue - PERBAIKAN: function biasa"""
     if result['final_issue_type'] == 'complaint' and result.get('final_reply_lead_time_days'):
         return f"{result['final_reply_lead_time_days']} days"
     elif result.get('final_reply_lead_time_minutes'):
@@ -680,124 +680,96 @@ def _format_lead_time(result):
     else:
         return "N/A"
 
-def display_enhanced_ticket_details(result):
-    """Display detailed information for a single ticket dengan enhanced info"""
+def display_enhanced_special_cases_tab(results, stats):
+    """Display enhanced special cases analysis"""
+    st.markdown("## 🚨 Enhanced Special Cases Analysis")
     
-    # Main Question
-    st.markdown("### 📝 Main Question")
-    st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
+    successful = [r for r in results if r['status'] == 'success']
     
-    # Issue Type dengan color coding
-    issue_type = result['final_issue_type']
-    issue_color = {
-        'normal': '#28a745',
-        'serious': '#dc3545', 
-        'complaint': '#ffc107'
-    }.get(issue_type, '#6c757d')
+    # Extract special cases - PERBAIKAN: Hanya yang benar-benar customer leave
+    customer_leave_cases = [r for r in successful if r.get('customer_leave')]
     
-    st.markdown(f"""
-    <div style="background-color: {issue_color}; color: white; padding: 10px; border-radius: 5px; margin: 10px 0;">
-        <strong>Issue Type:</strong> {issue_type.upper()}
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Special Notes
-    special_notes = []
-    if result.get('customer_leave'):
-        special_notes.append("🚶 **Customer Leave**: Detected by Ticket Automation")
-    if result['final_issue_type'] == 'complaint':
-        special_notes.append("📋 **Complaint Case**: Matched from complaint system")
-    if result['final_issue_type'] == 'serious':
-        special_notes.append("⚠️ **Serious Case**: Ticket was reopened")
-    
-    if special_notes:
-        st.markdown("### 🚨 Special Conditions")
-        for note in special_notes:
-            st.markdown(f'<div class="special-case">{note}</div>', unsafe_allow_html=True)
-    
-    # First Reply Section
-    if result['final_issue_type'] in ['serious', 'complaint']:
-        st.markdown("#### 🔄 First Reply Analysis")
-        col1, col2 = st.columns([2, 1])
+    # Cases dengan keyword customer leave tapi punya replies
+    false_leave_cases = []
+    for r in successful:
+        # Cek apakah ada keyword customer leave di raw data
+        has_leave_keyword = False
+        if '_raw_qa_pairs' in r:
+            for qa_pair in r['_raw_qa_pairs']:
+                message = qa_pair.get('answer', '')
+                if config.CUSTOMER_LEAVE_KEYWORD in str(message):
+                    has_leave_keyword = True
+                    break
         
-        with col1:
-            if result['first_reply_found']:
-                first_reply_msg = result.get('first_reply_message', 'No message content available')
-                st.markdown(f'<div class="message-box"><strong>First Reply:</strong> {first_reply_msg}</div>', unsafe_allow_html=True)
-            else:
-                st.error("❌ No first reply found - REQUIRED for serious/complaint issues")
-        
-        with col2:
-            if result['first_reply_found']:
-                st.metric("Lead Time", f"{result.get('first_reply_lead_time_minutes', 'N/A')} min")
-                st.metric("Time Format", result.get('first_reply_lead_time_hhmmss', 'N/A'))
-            else:
-                st.metric("Status", "Not Found")
+        # Jika ada keyword tapi tidak di-mark sebagai customer leave, berarti punya replies
+        if has_leave_keyword and not r.get('customer_leave'):
+            false_leave_cases.append(r)
     
-    # Final Reply Section  
-    st.markdown("#### ✅ Final Reply Analysis")
-    col1, col2 = st.columns([2, 1])
+    complaint_cases = [r for r in successful if r['final_issue_type'] == 'complaint']
+    serious_cases = [r for r in successful if r['final_issue_type'] == 'serious']
     
-    with col1:
-        if result['final_reply_found']:
-            final_reply_msg = result.get('final_reply_message', 'No message content available')
-            
-            if result['final_issue_type'] == 'complaint':
-                note = "From complaint system resolution"
-            elif result['final_issue_type'] == 'serious':
-                note = "After ticket reopened"
-            else:
-                note = "Direct solution provided"
-            
-            st.markdown(f'<div class="message-box"><strong>Final Reply ({note}):</strong> {final_reply_msg}</div>', unsafe_allow_html=True)
-        else:
-            st.error("❌ No final reply found")
-    
-    with col2:
-        if result['final_reply_found']:
-            if result['final_issue_type'] == 'complaint':
-                lead_time = result.get('final_reply_lead_time_days', 'N/A')
-                st.metric("Lead Time", f"{lead_time} days")
-            else:
-                st.metric("Lead Time", f"{result.get('final_reply_lead_time_minutes', 'N/A')} min")
-                st.metric("Time Format", result.get('final_reply_lead_time_hhmmss', 'N/A'))
-        else:
-            st.metric("Status", "Not Found")
-    
-    # Performance Metrics
-    st.markdown("#### 📊 Performance Metrics")
+    # SUMMARY CARDS
+    st.markdown("### 📊 Special Cases Summary")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        performance_color = {
-            'excellent': '#28a745',
-            'good': '#007bff', 
-            'fair': '#ffc107',
-            'poor': '#dc3545'
-        }.get(result['performance_rating'], '#6c757d')
-        
-        st.markdown(f"""
-        <div style="background-color: {performance_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
-            <h3 style="margin: 0; font-size: 1.2rem;">Performance</h3>
-            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['performance_rating'].upper()}</h1>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric("True Customer Leave", len(customer_leave_cases))
     
     with col2:
-        quality_color = "#28a745" if result['quality_score'] >= 4 else "#ffc107" if result['quality_score'] >= 2 else "#dc3545"
-        st.markdown(f"""
-        <div style="background-color: {quality_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
-            <h3 style="margin: 0; font-size: 1.2rem;">Quality Score</h3>
-            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['quality_score']}/6</h1>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric("False Customer Leave", len(false_leave_cases))
     
     with col3:
-        st.metric("Total Messages", result['total_messages'])
+        st.metric("Complaint Cases", len(complaint_cases))
     
     with col4:
-        answer_rate = (result['answered_pairs'] / result['total_qa_pairs']) * 100 if result['total_qa_pairs'] > 0 else 0
-        st.metric("Answer Rate", f"{answer_rate:.1f}%")
+        st.metric("Serious Cases", len(serious_cases))
+    
+    # TRUE CUSTOMER LEAVE CASES
+    st.markdown("---")
+    st.markdown("### 🚶 True Customer Leave Cases (No Proper Replies)")
+    
+    if customer_leave_cases:
+        st.error(f"**{len(customer_leave_cases)} conversations** where customer left WITHOUT proper replies")
+        
+        with st.expander("View True Customer Leave Details", expanded=True):
+            leave_data = []
+            for result in customer_leave_cases:
+                leave_data.append({
+                    'Ticket ID': result['ticket_id'],
+                    'Issue Type': result['final_issue_type'].upper(),
+                    'Main Question': result['main_question'][:60] + '...',
+                    'First Reply': '❌ Missing' if not result['first_reply_found'] else '⚠️ Partial',
+                    'Final Reply': '❌ Missing' if not result['final_reply_found'] else '⚠️ Partial',
+                    'Performance': result['performance_rating'].upper()
+                })
+            
+            df_leave = pd.DataFrame(leave_data)
+            st.dataframe(df_leave, use_container_width=True)
+    else:
+        st.success("✅ No true customer leave cases detected")
+    
+    # FALSE CUSTOMER LEAVE CASES (NEW SECTION)
+    if false_leave_cases:
+        st.markdown("---")
+        st.markdown("### ⚠️ False Customer Leave Cases (Has Replies)")
+        
+        st.warning(f"**{len(false_leave_cases)} conversations** with customer leave keyword BUT proper replies found")
+        
+        with st.expander("View False Customer Leave Details", expanded=True):
+            false_leave_data = []
+            for result in false_leave_cases:
+                false_leave_data.append({
+                    'Ticket ID': result['ticket_id'],
+                    'Issue Type': result['final_issue_type'].upper(),
+                    'Main Question': result['main_question'][:60] + '...',
+                    'First Reply': '✅ Found' if result['first_reply_found'] else '❌ Missing',
+                    'Final Reply': '✅ Found' if result['final_reply_found'] else '❌ Missing',
+                    'Performance': result['performance_rating'].upper(),
+                    'Note': 'Replies found despite leave keyword'
+                })
+            
+            df_false_leave = pd.DataFrame(false_leave_data)
+            st.dataframe(df_false_leave, use_container_width=True)
 
 def display_enhanced_lead_time_tab(results, stats):
     """Display enhanced lead time analysis"""
@@ -1423,7 +1395,7 @@ def display_raw_data_tab(results):
                 'First Reply LT (min)': result.get('first_reply_lead_time_minutes'),
                 'Final Reply Found': result['final_reply_found'],
                 'Final Reply Message': result.get('final_reply_message', '')[:100] + '...' if result.get('final_reply_message') else 'Not found',
-                'Final Reply LT': self._format_lead_time(result),
+                'Final Reply LT': _format_lead_time(result),  # PERBAIKAN: panggil function biasa
                 'Performance': result['performance_rating'],
                 'Quality Score': result['quality_score'],
                 'Customer Leave': result['customer_leave'],
@@ -1436,7 +1408,7 @@ def display_raw_data_tab(results):
         
     else:
         st.info("No successful analyses to display")
-
+        
 # Main execution
 if __name__ == "__main__":
     if not ANALYSIS_AVAILABLE:
@@ -1454,6 +1426,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
