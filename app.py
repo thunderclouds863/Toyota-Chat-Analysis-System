@@ -480,6 +480,7 @@ def _is_valid_lead_time(value):
         return float_value > 0  # Hanya nilai positif yang valid
     except (ValueError, TypeError):
         return False
+
 def format_lead_time(minutes):
     """Format lead time berdasarkan durasi: minutes, hours, atau days"""
     if minutes is None or minutes == 'N/A':
@@ -500,7 +501,7 @@ def format_lead_time(minutes):
             return f"{minutes_float:.1f} min"
     except (ValueError, TypeError):
         return "N/A"
-        
+
 def display_professional_overview_tab(results, stats):
     """Display professional overview tab dengan rangkuman penting"""
     st.markdown("## 📊 Performance Overview")
@@ -599,12 +600,12 @@ def display_professional_overview_tab(results, stats):
     
     with col1:
         first_avg = lead_time_stats['first_avg_minutes']
-        display_first = format_lead_time(first_avg)
+        display_first = format_lead_time(first_avg)  # Now this will work!
         st.metric("First Reply Avg", display_first)
     
     with col2:
         final_avg = lead_time_stats['final_avg_minutes']
-        display_final = format_lead_time(final_avg)
+        display_final = format_lead_time(final_avg)  # Now this will work!
         st.metric("Final Reply Avg", display_final)
     
     with col3:
@@ -630,7 +631,7 @@ def display_professional_overview_tab(results, stats):
         
         with col3:
             customer_leave = eff.get('customer_leave_cases', 0)
-            st.metric("Customer Leave Cases", customer_leave)
+            st.metric("Customer Leave Cases", customer_leave")
     
 def display_enhanced_lead_time_tab(results, stats):
     """Display enhanced lead time analysis - SEMUA ISSUE TYPE DISATUKAN"""
@@ -1438,3 +1439,34 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
