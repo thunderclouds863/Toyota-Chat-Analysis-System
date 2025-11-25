@@ -439,6 +439,27 @@ def display_professional_overview_tab(results, stats):
     """Display professional overview tab dengan rangkuman penting"""
     st.markdown("## 📊 Performance Overview")
     
+    successful = [r for r in results if r['status'] == 'success']
+    
+    # Helper function untuk format lead time yang fleksibel
+    def format_lead_time(minutes):
+        """Format lead time berdasarkan durasi: minutes, hours, atau days"""
+        if minutes is None or minutes == 'N/A' or minutes <= 0:
+            return "N/A"
+        
+        try:
+            minutes_float = float(minutes)
+            if minutes_float > 1440:  # > 1 day
+                days = minutes_float / 1440
+                return f"{days:.1f} days"
+            elif minutes_float > 60:  # > 1 hour
+                hours = minutes_float / 60
+                return f"{hours:.1f} hours"
+            else:
+                return f"{minutes_float:.0f} min"
+        except (ValueError, TypeError):
+            return "N/A"
+    
     # ROW 1: Key Metrics
     col1, col2, col3, col4 = st.columns(4)
     
@@ -522,39 +543,70 @@ def display_professional_overview_tab(results, stats):
             fig_perf.update_layout(xaxis_title="Performance Rating", yaxis_title="Count")
             st.plotly_chart(fig_perf, use_container_width=True)
     
-    # ROW 3: Lead Time Summary
+    # ROW 3: Lead Time Summary - MENGGUNAKAN LOGIC SAMA DENGAN BREAKDOWN
     st.markdown("### ⏱️ Lead Time Performance")
     
-    if 'lead_time_stats' in stats:
-        lt_stats = stats['lead_time_stats']
-        st.markdown("#### ⏱️ Lead Time Summary")
-        col1, col2, col3, col4 = st.columns(4)
+    # Hitung lead times dari data asli seperti di breakdown
+    all_first_lead_times = []
+    all_final_lead_times_minutes = []
+    
+    for result in successful:
+        # First reply lead times (selalu dalam minutes)
+        first_lt = result.get('first_reply_lead_time_minutes')
+        if first_lt is not None and first_lt != 'N/A':
+            try:
+                first_lt_float = float(first_lt)
+                if first_lt_float > 0:
+                    all_first_lead_times.append(first_lt_float)
+            except (ValueError, TypeError):
+                pass
         
-        with col1:
-            first_avg = lt_stats.get('first_reply_lead_time_minutes', 0)
-            if first_avg > 1440:  # lebih dari 1 hari
-                display_first = f"{first_avg/1440:.1f} days"
-            elif first_avg > 60:  # lebih dari 1 jam
-                display_first = f"{first_avg/60:.1f} hours"
-            else:
-                display_first = f"{first_avg:.0f} min"
-            st.metric("First Reply Avg", display_first)
+        # Final reply lead times - Convert SEMUA ke minutes
+        final_lt_minutes = None
+        if result['final_issue_type'] == 'complaint':
+            # Complaint: convert days ke minutes
+            final_lt_days = result.get('final_reply_lead_time_days')
+            if final_lt_days is not None and final_lt_days != 'N/A':
+                try:
+                    final_lt_minutes = float(final_lt_days) * 24 * 60  # Convert days to minutes
+                except (ValueError, TypeError):
+                    pass
+        else:
+            # Normal & Serious: langsung ambil minutes
+            final_lt_min = result.get('final_reply_lead_time_minutes')
+            if final_lt_min is not None and final_lt_min != 'N/A':
+                try:
+                    final_lt_minutes = float(final_lt_min)
+                except (ValueError, TypeError):
+                    pass
         
-        with col2:
-            final_avg = lt_stats.get('final_reply_avg_minutes', 0)
-            if final_avg > 1440:  # lebih dari 1 hari
-                display_final = f"{final_avg/1440:.1f} days"
-            elif final_avg > 60:  # lebih dari 1 jam
-                display_final = f"{final_avg/60:.1f} hours"
-            else:
-                display_final = f"{final_avg:.0f} min"
-            st.metric("Final Reply Avg", display_final)
-        
-        with col3:
-            st.metric("First Reply Samples", lt_stats['first_reply_samples'])
-        
-        with col4:
-            st.metric("Final Reply Samples", lt_stats['final_reply_samples'])
+        if final_lt_minutes is not None and final_lt_minutes > 0:
+            all_final_lead_times_minutes.append(final_lt_minutes)
+    
+    # Calculate averages dengan format fleksibel
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if all_first_lead_times:
+            avg_first_minutes = np.mean(all_first_lead_times)
+            display_first = format_lead_time(avg_first_minutes)
+        else:
+            display_first = "N/A"
+        st.metric("First Reply Avg", display_first)
+    
+    with col2:
+        if all_final_lead_times_minutes:
+            avg_final_minutes = np.mean(all_final_lead_times_minutes)
+            display_final = format_lead_time(avg_final_minutes)
+        else:
+            display_final = "N/A"
+        st.metric("Final Reply Avg", display_final)
+    
+    with col3:
+        st.metric("First Reply Samples", len(all_first_lead_times))
+    
+    with col4:
+        st.metric("Final Reply Samples", len(all_final_lead_times_minutes))
     
     # ROW 4: Reply Effectiveness
     st.markdown("### 💬 Reply Effectiveness")
@@ -574,7 +626,67 @@ def display_professional_overview_tab(results, stats):
         with col3:
             customer_leave = eff.get('customer_leave_cases', 0)
             st.metric("Customer Leave Cases", customer_leave)
-
+    
+    # ROW 5: Quick Insights
+    st.markdown("### 💡 Quick Insights")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Issue Type Performance
+        if 'issue_type_distribution' in stats and 'performance_distribution' in stats:
+            st.markdown("#### 🎯 Issue Type Overview")
+            issue_data = []
+            for issue_type, count in stats['issue_type_distribution'].items():
+                percentage = (count / stats['successful_analysis']) * 100
+                issue_data.append(f"• **{issue_type.upper()}**: {count} cases ({percentage:.1f}%)")
+            
+            for item in issue_data:
+                st.write(item)
+    
+    with col2:
+        # Lead Time Insights
+        st.markdown("#### ⏱️ Response Efficiency")
+        if all_first_lead_times and all_final_lead_times_minutes:
+            first_avg = np.mean(all_first_lead_times)
+            final_avg = np.mean(all_final_lead_times_minutes)
+            
+            # First reply insights
+            if first_avg <= 5:
+                first_insight = "🚀 Excellent first response time"
+            elif first_avg <= 15:
+                first_insight = "✅ Good first response time" 
+            elif first_avg <= 30:
+                first_insight = "⚠️ Moderate first response time"
+            else:
+                first_insight = "❌ Slow first response time"
+            
+            # Final reply insights
+            if final_avg <= 60:
+                final_insight = "🚀 Excellent resolution time"
+            elif final_avg <= 240:
+                final_insight = "✅ Good resolution time"
+            elif final_avg <= 1440:
+                final_insight = "⚠️ Moderate resolution time"
+            else:
+                final_insight = "❌ Slow resolution time"
+            
+            st.write(f"**First Reply**: {first_insight}")
+            st.write(f"**Final Reply**: {final_insight}")
+            
+            # Additional metric: resolution efficiency
+            if first_avg > 0:
+                resolution_efficiency = (first_avg / final_avg) * 100 if final_avg > 0 else 0
+                if resolution_efficiency <= 10:
+                    efficiency_note = "🚀 Highly efficient resolution process"
+                elif resolution_efficiency <= 25:
+                    efficiency_note = "✅ Efficient resolution process"
+                elif resolution_efficiency <= 50:
+                    efficiency_note = "⚠️ Moderate resolution process"
+                else:
+                    efficiency_note = "❌ Inefficient resolution process"
+                
+                st.write(f"**Process Efficiency**: {efficiency_note}")
 def display_enhanced_lead_time_tab(results, stats):
     """Display enhanced lead time analysis - SEMUA ISSUE TYPE DISATUKAN"""
     st.markdown("## ⏱️ Lead Time Analysis")
@@ -1445,6 +1557,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
