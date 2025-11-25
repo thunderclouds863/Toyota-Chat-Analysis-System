@@ -367,16 +367,11 @@ def display_enhanced_results():
         """, unsafe_allow_html=True)
 
     with col3:
-        if 'lead_time_stats' in stats:
-            avg_lead_time = stats['lead_time_stats'].get('first_reply_avg_minutes', 0)
-            metric_value = f"{avg_lead_time:.1f} min"
-        else:
-            metric_value = "N/A"
-        
+        total_issues = sum(stats['issue_type_distribution'].values())
         st.markdown(f"""
         <div class="metric-card">
-            <h3>Avg First Reply</h3>
-            <h1>{metric_value}</h1>
+            <h3>Successfully Analyzed Inquiries</h3>
+            <h1>{total_issues:.1f}%</h1>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1645,6 +1640,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
