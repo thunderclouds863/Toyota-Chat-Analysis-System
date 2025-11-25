@@ -460,8 +460,8 @@ def display_enhanced_results():
 
     # TABS - Enhanced
     st.markdown("---")
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📈 Overview", "🎯 Issue Types", "⏱️ Lead Times", "📊 Performance", "🚨 Special Cases", "📋 All Data"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "📈 Overview", "🎯 Issue Types", "⏱️ Lead Times", "📊 Performance", "🚨 Special Cases", "📋 All Data", "🐛 Debug"
     ])
     
     with tab1:
@@ -481,6 +481,9 @@ def display_enhanced_results():
     
     with tab6:
         display_raw_data_tab(results)
+    
+    with tab7:  # TAB DEBUG BARU
+        display_debug_tab(results, stats)
 
     # NEW ANALYSIS BUTTON
     st.markdown("---")
@@ -1548,6 +1551,76 @@ def display_raw_data_tab(results):
         
     else:
         st.info("No successful analyses to display")
+
+def display_debug_tab(results, stats):
+    """Display debug information"""
+    st.markdown("## 🐛 Debug Information")
+    
+    successful = [r for r in results if r['status'] == 'success']
+    failed = [r for r in results if r['status'] == 'failed']
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 📊 Analysis Status")
+        st.metric("Successful Analyses", len(successful))
+        st.metric("Failed Analyses", len(failed))
+        st.metric("Success Rate", f"{(len(successful)/len(results))*100:.1f}%" if results else "0%")
+    
+    with col2:
+        st.markdown("### ⚠️ Common Issues")
+        
+        # Check for negative lead times
+        negative_lead_times = []
+        for result in successful:
+            first_lt = result.get('first_reply_lead_time_minutes')
+            final_lt = result.get('final_reply_lead_time_minutes')
+            
+            if (first_lt is not None and first_lt < 0) or (final_lt is not None and final_lt < 0):
+                negative_lead_times.append(result['ticket_id'])
+        
+        if negative_lead_times:
+            st.error(f"❌ {len(negative_lead_times)} tickets with negative lead times")
+        else:
+            st.success("✅ No negative lead times detected")
+        
+        # Check for missing required replies
+        missing_required = []
+        for result in successful:
+            issue_type = result['final_issue_type']
+            if issue_type in ['serious', 'complaint'] and not result['first_reply_found']:
+                missing_required.append(result['ticket_id'])
+            elif issue_type == 'normal' and not result['final_reply_found'] and not result.get('customer_leave'):
+                missing_required.append(result['ticket_id'])
+        
+        if missing_required:
+            st.warning(f"⚠️ {len(missing_required)} tickets missing required replies")
+        else:
+            st.success("✅ All required replies present")
+    
+    # Show failed analyses
+    if failed:
+        st.markdown("### ❌ Failed Analyses")
+        for result in failed[:5]:
+            with st.expander(f"Failed: {result['ticket_id']}"):
+                st.write(f"Reason: {result['failure_reason']}")
+    
+    # Raw data inspection
+    st.markdown("### 🔍 Raw Data Inspection")
+    if successful:
+        sample_ticket = successful[0]
+        with st.expander("Sample Ticket Data Structure"):
+            st.json({k: v for k, v in sample_ticket.items() if not k.startswith('_raw')})
+    
+    # System information
+    st.markdown("### 🔧 System Information")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Python Version", sys.version.split()[0])
+    with col2:
+        st.metric("Pandas Version", pd.__version__)
+    with col3:
+        st.metric("Analysis Time", f"{stats.get('analysis_duration_seconds', 0):.1f}s" if stats else "N/A")
         
 # Main execution
 if __name__ == "__main__":
@@ -1566,6 +1639,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
