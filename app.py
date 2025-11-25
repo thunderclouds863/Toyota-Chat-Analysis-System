@@ -370,15 +370,11 @@ def display_enhanced_results():
         """, unsafe_allow_html=True)
 
     with col3:
-        if 'reply_effectiveness' in stats:
-            final_reply_rate = stats['reply_effectiveness'].get('final_reply_found_rate', 0) * 100
-        else:
-            final_reply_rate = 0
-            
+        total_issues = sum(stats['issue_type_distribution'].values())
         st.markdown(f"""
         <div class="metric-card">
-            <h3>Final Reply Rate</h3>
-            <h1>{final_reply_rate:.1f}%</h1>
+            <h3>Successfully Analyzed Inquiries</h3>
+            <h1>{total_issues}</h1>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1438,3 +1434,4 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
