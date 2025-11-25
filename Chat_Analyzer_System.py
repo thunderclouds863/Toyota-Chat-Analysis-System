@@ -1225,10 +1225,10 @@ class HybridClassifier:
             for feature, score in top_features:
                 print(f"   {feature}: {score:.3f}")
 
-# REPLY ANALYZER - COMPLETELY FIXED VERSION
+# REPLY ANALYZER - COMPLETE FIXED VERSION DENGAN LOGIC BARU
 class ReplyAnalyzer:
     def __init__(self):
-        # First reply patterns
+        # first_reply_patterns:
         self.first_reply_patterns = [
             r'tangkapan', r'layar', r'cek', r'proses', r'kami\s+lihat', r'kami\s+periksa', 
             r'konfirmasi', r'validasi', r'follow\s+up', r'tindak\s+lanjut', r'eskalasi',
@@ -1239,8 +1239,8 @@ class ReplyAnalyzer:
             r'tunggu\s+sebentar', r'mohon\s+ditunggu', r'proses', r'cek\s+dulu'
         ]
 
-        # Final reply patterns - ENHANCED
-        self.solution_patterns = [
+        # final_reply_patterns:
+        self.final_reply_patterns = [
             r'solusi', r'jawaban', r'caranya', r'prosedur', r'bisa\s+menghubungi',
             r'silakan\s+menghubungi', r'disarankan', r'disarankan\s+untuk', r'rekomendasi',
             r'berikut\s+informasi', r'nomor\s+telepon', r'alamat\s+dealer', r'bengkel\s+resmi',
@@ -1250,15 +1250,6 @@ class ReplyAnalyzer:
             r'syarat\s+dan\s+ketentuan', r'spesifikasi', r'fungsi', r'bisa\s+dilakukan',
             r'dapat\s+dilakukan', r'silakan\s+datang', r'bawa\s+ke', r'perbaikan', r'servis',
             r'ganti', r'penyebabnya', r'akibat', r'rekomendasi\s+kami', r'bisa\s+dicoba\s+kembali'
-        ]
-        
-        # Escalation patterns - NEW
-        self.escalation_patterns = [
-            r'akan\s+ditindaklanjuti', r'diteruskan\s+ke', r'akan\s+diteruskan', 
-            r'dilaporkan\s+ke', r'akan\s+dilaporkan', r'tunggu\s+informasi', 
-            r'follow\s+up', r'proses\s+lebih\s+lanjut', r'akan\s+kami\s+proses',
-            r'dibantu\s+teruskan', r'disampaikan\s+lebih\s+lanjut', r'pihak\s+terkait',
-            r'tim\s+terkait', r'area\s+terkait', r'akan\s+diperbaiki', r'akan\s+dicek'
         ]
         
         # Conversation enders
@@ -1278,64 +1269,87 @@ class ReplyAnalyzer:
         ]
 
     def analyze_replies(self, qa_pairs, main_issue_type, customer_info=None, all_tickets_data=None):
-        """Analyze replies dengan LOGIC BARU untuk semua scenario"""
+        """Analyze replies dengan LOGIC BARU yang lebih FLEXIBLE"""
         if not qa_pairs:
             return None, None, self._create_empty_analysis(main_issue_type, "No Q-A pairs available")
         
         print(f"🔍 Analyzing {len(qa_pairs)} replies for {main_issue_type} issue...")
         
-        # Check customer leave condition - IMPROVED DETECTION
-        customer_leave = self._detect_customer_leave_enhanced(qa_pairs)
+        # Check customer leave condition
+        customer_leave = any(pair.get('customer_leave', False) for pair in qa_pairs)
         
-        # Cari first reply (untuk serious/complaint)
+        # Cari first reply (hanya untuk serious/complaint)
         first_reply = None
         if main_issue_type in ['serious', 'complaint']:
-            first_reply = self._find_first_reply_enhanced(qa_pairs)
+            first_reply = self._find_first_reply_flexible(qa_pairs)
         
-        # Cari final reply dengan PRIORITY SYSTEM BARU
-        final_reply = self._find_final_reply_priority_system(qa_pairs, main_issue_type, customer_leave, first_reply)
+        # Cari final reply
+        final_reply = self._find_final_reply_flexible(qa_pairs, main_issue_type, customer_leave, first_reply)
         
-        # 🔥 FIX 1: Jika customer leave dan tidak ada final reply, gunakan last operator message
-        if customer_leave and not final_reply:
-            last_operator_reply = self._get_last_meaningful_operator_reply(qa_pairs)
-            if last_operator_reply:
-                print("   🚶 Using last operator reply as final reply (customer leave)")
-                final_reply = self._create_reply_object(last_operator_reply, 'final_customer_leave')
-                final_reply['customer_leave_note'] = "Customer left conversation - used last operator message"
-                final_reply['special_case_type'] = 'customer_leave'
-        
-        # 🔥 FIX 2: Jika ada first reply tapi tidak ada final reply, gunakan first reply sebagai final
+        # 🔥 FIX 1: Jika ada first reply tapi tidak ada final reply, gunakan first reply sebagai final reply
         if first_reply and not final_reply and main_issue_type in ['serious', 'complaint']:
-            print("   🔄 Using first reply as final reply (no proper final reply found)")
+            print("   🔄 Using first reply as final reply (no final reply found)")
             final_reply = first_reply.copy()
             final_reply['reply_type'] = 'final_from_first'
             final_reply['note'] = 'Used first reply as final reply (no proper final reply found)'
-            final_reply['special_case_type'] = 'first_as_final'
         
-        # Validasi requirement compliance - FLEXIBLE
-        is_valid = self._validate_requirements_enhanced(first_reply, final_reply, main_issue_type, customer_leave)
+        # 🔥 FIX 2: Untuk customer leave, gunakan operator reply terakhir sebagai final reply
+        if customer_leave and not final_reply:
+            last_operator_reply = self._get_last_operator_reply(qa_pairs)
+            if last_operator_reply:
+                print("   🚶 Using last operator reply as final reply (customer leave)")
+                final_reply = self._create_reply_object(last_operator_reply, 'final_customer_leave')
+                final_reply['customer_leave_note'] = "Customer left conversation - used last operator reply"
+        
+        # Validasi requirement compliance - LEBIH FLEXIBLE
+        is_valid = self._validate_requirements_flexible(first_reply, final_reply, main_issue_type, customer_leave)
+        
+        if not is_valid:
+            print(f"   ⚠️  Does not fully meet {main_issue_type} reply requirements")
         
         # Calculate lead times
         lead_times = self._calculate_lead_times(qa_pairs, first_reply, final_reply, main_issue_type)
         
-        # Build analysis result dengan SPECIAL CASES TRACKING
+        # Build analysis result
         analysis_result = {
             'issue_type': main_issue_type,
             'first_reply': first_reply,
             'final_reply': final_reply,
             'lead_times': lead_times,
             'customer_leave': customer_leave,
-            'reply_validation': self._validate_replies_enhanced(first_reply, final_reply, main_issue_type, customer_leave),
-            'requirement_compliant': is_valid,
-            'special_cases': self._extract_special_cases(first_reply, final_reply, customer_leave)
+            'reply_validation': self._validate_replies_flexible(first_reply, final_reply, main_issue_type, customer_leave),
+            'requirement_compliant': is_valid
         }
         
-        print(f"   ✅ Reply analysis completed - Special cases: {analysis_result['special_cases']}")
+        print(f"   ✅ Reply analysis completed")
         return first_reply, final_reply, analysis_result
 
-    def _find_final_reply_priority_system(self, qa_pairs, issue_type, customer_leave, first_reply):
-        """Cari final reply dengan PRIORITY SYSTEM: Solution → Escalation → Last Operator → First Reply"""
-        candidates = []
+    def _find_first_reply_flexible(self, qa_pairs):
+        """Cari first reply dengan approach yang lebih FLEXIBLE"""
+        for pair in qa_pairs:
+            if pair['is_answered']:
+                answer = pair['answer']
+                
+                # Skip yang benar-benar generic
+                if self._is_very_generic_reply(answer):
+                    continue
+                
+                # Cek jika menunjukkan action/tindakan
+                if self._shows_action_not_solution(answer):
+                    print(f"   ✅ First reply found: {answer[:60]}...")
+                    return self._create_reply_object(pair, 'first_flexible')
+        
+        # Fallback: ambil operator reply pertama yang tidak generic
+        for pair in qa_pairs:
+            if pair['is_answered'] and not self._is_very_generic_reply(pair['answer']):
+                print(f"   🔄 First reply (fallback): {pair['answer'][:60]}...")
+                return self._create_reply_object(pair, 'first_fallback')
+        
+        return None
+
+    def _find_final_reply_flexible(self, qa_pairs, issue_type, customer_leave=False, first_reply=None):
+        """Cari final reply dengan approach FLEXIBLE"""
+        candidate_replies = []
         
         for pair in qa_pairs:
             if pair['is_answered']:
@@ -1349,31 +1363,10 @@ class ReplyAnalyzer:
                 if first_reply and answer == first_reply.get('message'):
                     continue
                 
-                # SCORING SYSTEM BERDASARKAN PRIORITY
+                # Score berdasarkan final reply patterns
                 score = 0
-                reply_type = 'unknown'
-                
-                # 1. SOLUTION REPLY (HIGHEST PRIORITY - Score: 10)
-                if self._is_solution_reply(answer):
-                    score += 10
-                    reply_type = 'solution'
-                    print(f"   💡 Solution candidate: {answer[:60]}...")
-                
-                # 2. ESCALATION REPLY (MEDIUM PRIORITY - Score: 7)  
-                elif self._is_escalation_reply(answer):
-                    score += 7
-                    reply_type = 'escalation'
-                    print(f"   🔄 Escalation candidate: {answer[:60]}...")
-                
-                # 3. MEANINGFUL REPLY (LOW PRIORITY - Score: 5)
-                elif self._is_meaningful_final_reply(answer):
-                    score += 5
-                    reply_type = 'meaningful'
-                
-                # 4. CONVERSATION ENDER (Score: 3)
-                if self._matches_pattern(answer, self.conversation_ender_patterns):
+                if self._matches_pattern(answer, self.final_reply_patterns):
                     score += 3
-                    reply_type = 'conversation_ender'
                 
                 # Bonus untuk panjang content
                 word_count = len(answer.split())
@@ -1382,106 +1375,99 @@ class ReplyAnalyzer:
                 elif word_count > 8:
                     score += 1
                 
-                if score >= 3:  # Minimum threshold
-                    candidates.append({
+                # Bonus untuk informasi spesifik/solusi
+                if self._matches_pattern(answer, [r'solusi', r'jawaban', r'caranya', r'nomor', r'alamat']):
+                    score += 2
+                
+                if score >= 2:  # Threshold lebih rendah
+                    candidate_replies.append({
                         'pair': pair,
                         'score': score,
-                        'reply_type': reply_type,
                         'position': pair.get('position', 0),
-                        'word_count': word_count,
-                        'timestamp': pair.get('answer_time')
+                        'word_count': word_count
                     })
         
-        if candidates:
-            # Urutkan berdasarkan: Score → Reply Type Priority → Position
-            def sort_key(candidate):
-                type_priority = {'solution': 3, 'escalation': 2, 'meaningful': 1, 'conversation_ender': 0, 'unknown': -1}
-                return (candidate['score'], type_priority.get(candidate['reply_type'], -1), candidate['position'])
-            
-            best_candidate = max(candidates, key=sort_key)
-            reply_obj = self._create_reply_object(best_candidate['pair'], f'final_{best_candidate["reply_type"]}')
-            reply_obj['special_case_type'] = best_candidate['reply_type']
-            
-            print(f"   ✅ Final reply ({best_candidate['reply_type']}): {best_candidate['pair']['answer'][:60]}...")
+        if candidate_replies:
+            # Pilih yang score tertinggi, lalu yang paling akhir
+            best_candidate = max(candidate_replies, key=lambda x: (x['score'], x['position']))
+            reply_obj = self._create_reply_object(best_candidate['pair'], 'final_proper')
+            print(f"   ✅ Final reply found: {best_candidate['pair']['answer'][:60]}...")
             return reply_obj
         
-        # FALLBACK: Untuk customer leave, gunakan last operator message
-        if customer_leave:
-            last_operator_reply = self._get_last_meaningful_operator_reply(qa_pairs)
+        # 🔥 FIX 3: Untuk normal issues, gunakan operator reply terakhir yang meaningful
+        if issue_type == 'normal' or customer_leave:
+            last_operator_reply = self._get_last_operator_reply(qa_pairs)
             if last_operator_reply:
-                reply_obj = self._create_reply_object(last_operator_reply, 'final_customer_leave_fallback')
-                reply_obj['special_case_type'] = 'customer_leave_fallback'
-                reply_obj['note'] = "Customer left - used last operator message as fallback"
-                print(f"   🔄 Final reply (customer leave fallback): {last_operator_reply['answer'][:60]}...")
+                reply_obj = self._create_reply_object(last_operator_reply, 'final_fallback')
+                note = "Customer left" if customer_leave else "Using last meaningful operator reply"
+                reply_obj['note'] = note
+                print(f"   🔄 Final reply ({note}): {last_operator_reply['answer'][:60]}...")
                 return reply_obj
         
         return None
 
-    def _detect_customer_leave_enhanced(self, qa_pairs):
-        """Deteksi customer leave yang lebih akurat"""
-        if not qa_pairs:
-            return False
+    def _validate_requirements_flexible(self, first_reply, final_reply, issue_type, customer_leave):
+        """Validasi requirements dengan approach FLEXIBLE"""
         
-        # Cari last customer message dan last operator message
-        last_customer_time = None
-        last_operator_time = None
-        
-        for pair in qa_pairs:
-            if not pair['is_answered']:
-                # Unanswered question dari customer
-                last_customer_time = pair.get('question_time')
-            else:
-                # Answered question - operator reply
-                last_operator_time = pair.get('answer_time')
-        
-        # Jika ada last operator time setelah last customer time, dan gap > 30 menit
-        if last_customer_time and last_operator_time:
-            time_gap = (last_operator_time - last_customer_time).total_seconds() / 60
-            
-            # Customer leave jika operator message terakhir SETELAH customer message terakhir
-            # dan gap waktu > 30 menit
-            if last_operator_time > last_customer_time and time_gap >= 30:
-                print(f"   🚶 Customer leave detected: {time_gap:.1f} min gap")
-                return True
-        
-        # Additional check: jika ada unanswered questions di akhir
-        unanswered_at_end = any(not pair['is_answered'] for pair in qa_pairs[-2:])  # Check 2 terakhir
-        if unanswered_at_end:
-            print("   🚶 Customer leave detected: unanswered questions at end")
+        # REQUIREMENT 1: Normal hanya butuh FINAL reply
+        if issue_type == 'normal':
+            if not final_reply:
+                if customer_leave:
+                    print("   ⚠️  NORMAL with customer leave: Final reply not strictly required")
+                    return True
+                else:
+                    print("   ❌ NORMAL: Final reply required but not found")
+                    return False
             return True
         
-        return False
-
-    def _is_solution_reply(self, message):
-        """Cek apakah message mengandung solusi konkrit"""
-        message_lower = message.lower()
-        return self._matches_pattern(message_lower, self.solution_patterns)
-
-    def _is_escalation_reply(self, message):
-        """Cek apakah message mengandung eskalasi/follow-up"""
-        message_lower = message.lower()
-        return self._matches_pattern(message_lower, self.escalation_patterns)
-
-    def _is_meaningful_final_reply(self, message):
-        """Cek apakah message meaningful untuk final reply"""
-        if self._is_very_generic_reply(message):
-            return False
-        
-        message_lower = message.lower()
-        word_count = len(message_lower.split())
-        
-        # Skip very short messages
-        if word_count < 4:
-            return False
-        
-        # Skip pure greetings/thank you
-        greetings = ['halo', 'hai', 'hi', 'selamat', 'terima kasih', 'thanks', 'makasih']
-        if any(greeting in message_lower for greeting in greetings) and word_count < 8:
-            return False
+        # REQUIREMENT 2: Serious/Complaint butuh FIRST reply
+        elif issue_type in ['serious', 'complaint']:
+            if not first_reply:
+                print("   ❌ SERIOUS/COMPLAINT: First reply required but not found")
+                return False
+            
+            # Untuk serious/complaint, final reply tidak wajib (bisa di follow-up)
+            if not final_reply:
+                print("   ⚠️  SERIOUS/COMPLAINT: Final reply not found (may be handled in follow-up)")
+                return True
+            
+            return True
         
         return True
 
-    def _get_last_meaningful_operator_reply(self, qa_pairs):
+    def _validate_replies_flexible(self, first_reply, final_reply, issue_type, customer_leave):
+        """Validasi replies dengan approach FLEXIBLE"""
+        validation = {
+            'first_reply_found': first_reply is not None,
+            'final_reply_found': final_reply is not None,
+            'customer_leave': customer_leave,
+            'quality_score': 0,
+            'quality_rating': 'fair'
+        }
+        
+        # Quality scoring
+        if first_reply:
+            validation['quality_score'] += 2
+        if final_reply:
+            validation['quality_score'] += 2
+        
+        # Recommendation
+        if customer_leave and final_reply:
+            validation['recommendation'] = 'Customer left conversation'
+            validation['quality_rating'] = 'fair'
+        elif not final_reply and issue_type == 'normal':
+            validation['recommendation'] = 'Final reply missing for normal issue'
+            validation['quality_rating'] = 'poor'
+        elif not first_reply and issue_type in ['serious', 'complaint']:
+            validation['recommendation'] = 'First reply missing for serious/complaint issue'
+            validation['quality_rating'] = 'poor'
+        else:
+            validation['recommendation'] = 'Meets basic requirements'
+            validation['quality_rating'] = 'good'
+        
+        return validation
+
+    def _get_last_operator_reply(self, qa_pairs):
         """Ambil operator reply terakhir yang meaningful"""
         operator_replies = []
         
@@ -1491,70 +1477,61 @@ class ReplyAnalyzer:
                 role = pair.get('answer_role', '').lower()
                 
                 if any(keyword in role for keyword in ['operator', 'agent', 'admin', 'cs']):
-                    if not self._is_very_generic_reply(answer) and self._is_meaningful_final_reply(answer):
+                    if not self._is_very_generic_reply(answer):
                         operator_replies.append(pair)
         
         if operator_replies:
             # Return yang terakhir berdasarkan waktu
-            return max(operator_replies, key=lambda x: x.get('answer_time') or pd.Timestamp.min)
+            return sorted(operator_replies, key=lambda x: x.get('answer_time') or pd.Timestamp.min)[-1]
         
         return None
 
-    def _extract_special_cases(self, first_reply, final_reply, customer_leave):
-        """Extract special cases untuk tracking di dashboard"""
-        special_cases = []
+    def _shows_action_not_solution(self, message):
+        """Cek apakah message menunjukkan action/tindakan BUKAN solusi final"""
+        message_lower = message.lower()
         
-        if customer_leave:
-            special_cases.append('customer_leave')
+        action_patterns = [
+            r'tangkapan\s+layar', r'cek', r'proses', r'kami\s+lihat', r'kami\s+periksa', 
+            r'konfirmasi', r'validasi', r'follow\s+up', r'tindak\s+lanjut', r'eskalasi',
+            r'kami\s+pelajari', r'kami\s+investigasi', r'kami\s+telusuri', r'jika\s+dilihat'
+        ]
         
-        if final_reply:
-            reply_type = final_reply.get('reply_type', '')
-            special_case_type = final_reply.get('special_case_type', '')
-            
-            if 'customer_leave' in reply_type or special_case_type == 'customer_leave':
-                special_cases.append('customer_leave_final')
-            
-            if 'escalation' in reply_type or special_case_type == 'escalation':
-                special_cases.append('escalation_reply')
-            
-            if 'first_as_final' in special_case_type:
-                special_cases.append('first_as_final')
-            
-            if 'fallback' in reply_type:
-                special_cases.append('fallback_reply')
+        solution_patterns = [
+            r'solusi', r'jawaban', r'caranya', r'prosedur', r'bisa\s+menghubungi',
+            r'silakan\s+menghubungi', r'disarankan\s+untuk', r'rekomendasi'
+        ]
         
-        return special_cases
+        has_action = self._matches_pattern(message_lower, action_patterns)
+        has_solution = self._matches_pattern(message_lower, solution_patterns)
+        
+        return has_action and not has_solution
 
-    def _validate_requirements_enhanced(self, first_reply, final_reply, issue_type, customer_leave):
-        """Validasi requirements dengan approach FLEXIBLE untuk special cases"""
+    def _is_very_generic_reply(self, message):
+        """Hanya skip yang benar-benar generic"""
+        message_lower = str(message).lower()
         
-        # Untuk semua issue types, jika customer leave, requirements lebih relaxed
-        if customer_leave:
-            print("   ⚠️  Customer leave case - relaxed requirements")
-            return True
-        
-        # Normal issues butuh FINAL reply
-        if issue_type == 'normal':
-            if not final_reply:
-                print("   ❌ NORMAL: Final reply required but not found")
-                return False
-            return True
-        
-        # Serious/Complaint butuh FIRST reply
-        elif issue_type in ['serious', 'complaint']:
-            if not first_reply:
-                print("   ❌ SERIOUS/COMPLAINT: First reply required but not found")
-                return False
-            
-            # Untuk serious/complaint, final reply tidak wajib jika ada first reply
-            # (bisa di-handle di follow-up ticket)
-            if not final_reply:
-                print("   ⚠️  SERIOUS/COMPLAINT: Final reply not found (may be handled in follow-up)")
-                return True
-            
-            return True
-        
-        return True
+        very_generic_patterns = [
+            r'virtual\s+assistant',
+            r'akan\s+segera\s+menghubungi', 
+            r'dalam\s+antrian',
+            r'terima\s+kasih,\s+saat\s+ini\s+anda\s+masuk',
+            r'customer\s+service\s+akan',
+            r'menghubungi\s+anda',
+            r'silakan\s+memilih\s+dari\s+menu',
+            r'klik\s+setuju',
+            r'data\s+privasi',
+            r'pilih\s+menu',
+            r'silahkan\s+ketik\s+nama'
+        ]
+
+        return any(re.search(pattern, message_lower) for pattern in very_generic_patterns)
+
+    def _matches_pattern(self, text, patterns):
+        """Check if text matches any of the regex patterns"""
+        if not text:
+            return False
+        text_lower = text.lower()
+        return any(re.search(pattern, text_lower) for pattern in patterns)
 
     def _create_reply_object(self, pair, reply_type):
         """Create standardized reply object"""
@@ -1637,78 +1614,6 @@ class ReplyAnalyzer:
             return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         except:
             return "00:00:00"
-
-    def _find_first_reply_enhanced(self, qa_pairs):
-        """Cari first reply dengan approach yang lebih FLEXIBLE"""
-        for pair in qa_pairs:
-            if pair['is_answered']:
-                answer = pair['answer']
-                
-                # Skip yang benar-benar generic
-                if self._is_very_generic_reply(answer):
-                    continue
-                
-                # Cek jika menunjukkan action/tindakan
-                if self._shows_action_not_solution(answer):
-                    print(f"   ✅ First reply found: {answer[:60]}...")
-                    return self._create_reply_object(pair, 'first_enhanced')
-        
-        # Fallback: ambil operator reply pertama yang tidak generic
-        for pair in qa_pairs:
-            if pair['is_answered'] and not self._is_very_generic_reply(pair['answer']):
-                print(f"   🔄 First reply (fallback): {pair['answer'][:60]}...")
-                return self._create_reply_object(pair, 'first_fallback')
-        
-        return None
-
-    def _validate_replies_enhanced(self, first_reply, final_reply, issue_type, customer_leave):
-        """Validasi replies dengan approach FLEXIBLE"""
-        validation = {
-            'first_reply_found': first_reply is not None,
-            'final_reply_found': final_reply is not None,
-            'customer_leave': customer_leave,
-            'quality_score': 0,
-            'quality_rating': 'fair',
-            'special_cases': []
-        }
-        
-        # Quality scoring
-        if first_reply:
-            validation['quality_score'] += 2
-        if final_reply:
-            validation['quality_score'] += 2
-        
-        # Special cases tracking
-        if customer_leave:
-            validation['special_cases'].append('customer_leave')
-        
-        if final_reply:
-            reply_type = final_reply.get('reply_type', '')
-            if 'customer_leave' in reply_type:
-                validation['special_cases'].append('customer_leave_final')
-            if 'escalation' in reply_type:
-                validation['special_cases'].append('escalation_reply')
-            if 'fallback' in reply_type:
-                validation['special_cases'].append('fallback_reply')
-        
-        # Recommendation based on scenario
-        if customer_leave and final_reply:
-            validation['recommendation'] = 'Customer left conversation - used available reply'
-            validation['quality_rating'] = 'fair'
-        elif not final_reply and issue_type == 'normal':
-            validation['recommendation'] = 'Final reply missing for normal issue'
-            validation['quality_rating'] = 'poor'
-        elif not first_reply and issue_type in ['serious', 'complaint']:
-            validation['recommendation'] = 'First reply missing for serious/complaint issue'
-            validation['quality_rating'] = 'poor'
-        elif final_reply and 'escalation' in final_reply.get('reply_type', ''):
-            validation['recommendation'] = 'Issue requires follow-up/escalation'
-            validation['quality_rating'] = 'good'
-        else:
-            validation['recommendation'] = 'Meets basic requirements'
-            validation['quality_rating'] = 'good'
-        
-        return validation
 
 # CompleteAnalysisPipeline (FULL FIX)
 import time
@@ -3924,4 +3829,3 @@ if __name__ == "__main__":
     
     for ticket_id in problematic_tickets:
         debug_ticket_analysis(ticket_id, raw_df)
-
