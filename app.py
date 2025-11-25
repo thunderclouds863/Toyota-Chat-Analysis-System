@@ -371,7 +371,7 @@ def display_enhanced_results():
         st.markdown(f"""
         <div class="metric-card">
             <h3>Successfully Analyzed Inquiries</h3>
-            <h1>{total_issues:.1f}%</h1>
+            <h1>{total_issues}</h1>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1640,6 +1640,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
