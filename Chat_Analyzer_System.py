@@ -927,7 +927,7 @@ def _compile_ticket_result(self, ticket_id, ticket_df, qa_pairs, main_issue, rep
     }
     
     return result
-    
+
     def _calculate_stats(self, total_tickets):
         """Hitung statistics dari results - FIXED VERSION"""
         successful = [r for r in self.results if r['status'] == 'success']
@@ -1098,4 +1098,5 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
