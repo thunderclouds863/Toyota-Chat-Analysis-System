@@ -1094,99 +1094,110 @@ class CompleteAnalysisPipeline:
         
         return result
     
-    def _calculate_stats(self, total_tickets):
-        """Hitung statistics dari results - FIXED VERSION"""
-        successful = [r for r in self.results if r['status'] == 'success']
-        failed = [r for r in self.results if r['status'] == 'failed']
-        
-        stats = {
-            'total_tickets': len(self.results),
-            'successful_analysis': len(successful),
-            'failed_analysis': len(failed),
-            'success_rate': len(successful) / len(self.results) if self.results else 0
-        }
-        
-        if successful:
-            # Issue type distribution
-            issue_types = [r['final_issue_type'] for r in successful]
-            stats['issue_type_distribution'] = dict(Counter(issue_types))
-            
-            # Performance metrics
-            performance_ratings = [r['performance_rating'] for r in successful]
-            stats['performance_distribution'] = dict(Counter(performance_ratings))
-            
-            # Lead time statistics - FIXED: Selalu include semua key yang diperlukan
-            first_lead_times = []
-            final_lead_times = []
-            
-            for r in successful:
-                # First reply lead times
-                first_lt = r.get('first_reply_lead_time_minutes')
-                if first_lt is not None and first_lt != 'N/A':
-                    try:
-                        first_lead_times.append(float(first_lt))
-                    except (ValueError, TypeError):
-                        pass
-                
-                # Final reply lead times (hanya untuk normal/serious, bukan complaint)
-                final_lt = r.get('final_reply_lead_time_minutes')
-                if final_lt is not None and final_lt != 'N/A':
-                    try:
-                        final_lead_times.append(float(final_lt))
-                    except (ValueError, TypeError):
-                        pass
-            
-            # PERBAIKAN: Selalu buat key yang diperlukan meskipun datanya kosong
-            stats['lead_time_stats'] = {
-                'first_reply_avg_minutes': np.mean(first_lead_times) if first_lead_times else 0,
-                'final_reply_avg_minutes': np.mean(final_lead_times) if final_lead_times else 0,
-                'first_reply_samples': len(first_lead_times),
-                'final_reply_samples': len(final_lead_times)
-            }
-            
-            # Reply effectiveness
-            stats['reply_effectiveness'] = {
-                'first_reply_found_rate': sum(1 for r in successful if r['first_reply_found']) / len(successful) if successful else 0,
-                'final_reply_found_rate': sum(1 for r in successful if r['final_reply_found']) / len(successful) if successful else 0,
-                'customer_leave_cases': sum(1 for r in successful if r['customer_leave'])
-            }
-        
-        return stats
+def _calculate_stats(self, total_tickets):
+    """Hitung statistics dari results - FIXED VERSION"""
+    successful = [r for r in self.results if r['status'] == 'success']
+    failed = [r for r in self.results if r['status'] == 'failed']
     
-    def _print_summary_report(self):
-        """Print summary report - FIXED VERSION"""
-        stats = self.analysis_stats
+    stats = {
+        'total_tickets': len(self.results),
+        'successful_analysis': len(successful),
+        'failed_analysis': len(failed),
+        'success_rate': len(successful) / len(self.results) if self.results else 0
+    }
+    
+    # PERBAIKAN: Selalu inisialisasi dictionary yang diperlukan
+    stats['issue_type_distribution'] = {}
+    stats['performance_distribution'] = {}
+    stats['lead_time_stats'] = {
+        'first_reply_avg_minutes': 0,
+        'final_reply_avg_minutes': 0,
+        'first_reply_samples': 0,
+        'final_reply_samples': 0
+    }
+    stats['reply_effectiveness'] = {
+        'first_reply_found_rate': 0,
+        'final_reply_found_rate': 0,
+        'customer_leave_cases': 0
+    }
+    
+    if successful:
+        # Issue type distribution
+        issue_types = [r.get('final_issue_type', 'unknown') for r in successful]
+        stats['issue_type_distribution'] = dict(Counter(issue_types))
         
-        print(f"📊 ANALYSIS SUMMARY REPORT")
-        print(f"   • Total Tickets: {stats['total_tickets']}")
-        print(f"   • Successful Analysis: {stats['successful_analysis']} ({stats['success_rate']*100:.1f}%)")
+        # Performance metrics
+        performance_ratings = [r.get('performance_rating', 'unknown') for r in successful]
+        stats['performance_distribution'] = dict(Counter(performance_ratings))
         
-        if 'issue_type_distribution' in stats:
-            print(f"   • Issue Types: {stats['issue_type_distribution']}")
+        # Lead time statistics
+        first_lead_times = []
+        final_lead_times = []
         
-        if 'lead_time_stats' in stats:
-            lt_stats = stats['lead_time_stats']
-            # PERBAIKAN: Gunakan get() dengan default value
-            first_reply_avg = lt_stats.get('first_reply_avg_minutes', 0)
-            final_reply_avg = lt_stats.get('final_reply_avg_minutes', 0)
+        for r in successful:
+            # First reply lead times
+            first_lt = r.get('first_reply_lead_time_minutes')
+            if first_lt is not None:
+                try:
+                    first_lead_times.append(float(first_lt))
+                except (ValueError, TypeError):
+                    pass
             
-            print(f"   • Avg First Reply: {first_reply_avg:.1f} min")
-            
-            # PERBAIKAN: Handle case dimana final_reply_avg_minutes tidak ada atau 0
-            if final_reply_avg > 0 and final_reply_avg != float('inf'):
-                print(f"   • Avg Final Reply: {final_reply_avg:.1f} min")
-            else:
-                print(f"   • Avg Final Reply: Mixed (minutes/days)")
-            
-            print(f"   • First Reply Samples: {lt_stats.get('first_reply_samples', 0)}")
-            print(f"   • Final Reply Samples: {lt_stats.get('final_reply_samples', 0)}")
+            # Final reply lead times
+            final_lt = r.get('final_reply_lead_time_minutes')
+            if final_lt is not None:
+                try:
+                    final_lead_times.append(float(final_lt))
+                except (ValueError, TypeError):
+                    pass
         
-        if 'reply_effectiveness' in stats:
-            eff = stats['reply_effectiveness']
-            print(f"   • First Reply Found: {eff.get('first_reply_found_rate', 0)*100:.1f}%")
-            print(f"   • Final Reply Found: {eff.get('final_reply_found_rate', 0)*100:.1f}%")
-            print(f"   • Customer Leave Cases: {eff.get('customer_leave_cases', 0)}")
-
+        # Update lead time stats dengan data yang ada
+        if first_lead_times:
+            stats['lead_time_stats']['first_reply_avg_minutes'] = np.mean(first_lead_times)
+            stats['lead_time_stats']['first_reply_samples'] = len(first_lead_times)
+        
+        if final_lead_times:
+            stats['lead_time_stats']['final_reply_avg_minutes'] = np.mean(final_lead_times)
+            stats['lead_time_stats']['final_reply_samples'] = len(final_lead_times)
+        
+        # Reply effectiveness
+        first_reply_found = sum(1 for r in successful if r.get('first_reply_found', False))
+        final_reply_found = sum(1 for r in successful if r.get('final_reply_found', False))
+        customer_leave_cases = sum(1 for r in successful if r.get('customer_leave', False))
+        
+        stats['reply_effectiveness'] = {
+            'first_reply_found_rate': first_reply_found / len(successful) if successful else 0,
+            'final_reply_found_rate': final_reply_found / len(successful) if successful else 0,
+            'customer_leave_cases': customer_leave_cases
+        }
+    
+    return stats
+    
+def _print_summary_report(self):
+    """Print summary report - FIXED VERSION"""
+    stats = self.analysis_stats
+    
+    print(f"📊 ANALYSIS SUMMARY REPORT")
+    print(f"   • Total Tickets: {stats['total_tickets']}")
+    print(f"   • Successful Analysis: {stats['successful_analysis']} ({stats['success_rate']*100:.1f}%)")
+    
+    # PERBAIKAN: Gunakan get() dengan default value
+    issue_dist = stats.get('issue_type_distribution', {})
+    if issue_dist:
+        print(f"   • Issue Types: {issue_dist}")
+    else:
+        print(f"   • Issue Types: No data available")
+    
+    lt_stats = stats.get('lead_time_stats', {})
+    print(f"   • Avg First Reply: {lt_stats.get('first_reply_avg_minutes', 0):.1f} min")
+    print(f"   • Avg Final Reply: {lt_stats.get('final_reply_avg_minutes', 0):.1f} min")
+    print(f"   • First Reply Samples: {lt_stats.get('first_reply_samples', 0)}")
+    print(f"   • Final Reply Samples: {lt_stats.get('final_reply_samples', 0)}")
+    
+    eff = stats.get('reply_effectiveness', {})
+    print(f"   • First Reply Found: {eff.get('first_reply_found_rate', 0)*100:.1f}%")
+    print(f"   • Final Reply Found: {eff.get('final_reply_found_rate', 0)*100:.1f}%")
+    print(f"   • Customer Leave Cases: {eff.get('customer_leave_cases', 0)}")
 # Results Exporter
 class ResultsExporter:
     def __init__(self):
@@ -1352,3 +1363,4 @@ print("   ✓ Ticket reopened detection")
 print("   ✓ Improved main question detection")
 print("   ✓ Enhanced customer leave logic")
 print("=" * 60)
+
