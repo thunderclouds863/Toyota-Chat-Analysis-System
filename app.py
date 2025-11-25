@@ -607,64 +607,6 @@ def display_enhanced_ticket_details(result):
     special_notes = []
     if result.get('customer_leave'):
         special_notes.append("🚶 **Customer Leave**: Detected by Ticket Automation")
-    if result['final_issue_type'] == 'complaint':
-        special_notes.append("📋 **Complaint Case**: Matched from complaint system")
-    if result['final_issue_type'] == 'serious':
-        special_notes.append("⚠️ **Serious Case**: Ticket was reopened")
-    
-    if special_notes:
-        st.markdown("### 🚨 Special Conditions")
-        for note in special_notes:
-            st.markdown(f'<div class="special-case">{note}</div>', unsafe_allow_html=True)
-    
-    # First Reply Section
-    if result['final_issue_type'] in ['serious', 'complaint']:
-        st.markdown("#### 🔄 First Reply Analysis")
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            if result['first_reply_found']:
-                first_reply_msg = result.get('first_reply_message', 'No message content available')
-                st.markdown(f'<div class="message-box"><strong>First Reply:</strong> {first_reply_msg}</div>', unsafe_allow_html=True)
-            else:
-                st.error("❌ No first reply found - REQUIRED for serious/complaint issues")
-        
-        with col2:
-            if result['first_reply_found']:
-                st.metric("Lead Time", f"{result.get('first_reply_lead_time_minutes', 'N/A')} min")
-                st.metric("Time Format", result.get('first_reply_lead_time_hhmmss', 'N/A'))
-            else:
-                st.metric("Status", "Not Found")
-    
-    # Final Reply Section  
-    st.markdown("#### ✅ Final Reply Analysis")
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        if result['final_reply_found']:
-            final_reply_msg = result.get('final_reply_message', 'No message content available')
-            
-            if result['final_issue_type'] == 'complaint':
-                note = "From complaint system resolution"
-            elif result['final_issue_type'] == 'serious':
-                note = "After ticket reopened"
-            else:
-                note = "Direct solution provided"
-            
-            st.markdown(f'<div class="message-box"><strong>Final Reply ({note}):</strong> {final_reply_msg}</div>', unsafe_allow_html=True)
-        else:
-            st.error("❌ No final reply found")
-    
-    with col2:
-        if result['final_reply_found']:
-            if result['final_issue_type'] == 'complaint':
-                lead_time = result.get('final_reply_lead_time_days', 'N/A')
-                st.metric("Lead Time", f"{lead_time} days")
-            else:
-                st.metric("Lead Time", f"{result.get('final_reply_lead_time_minutes', 'N/A')} min")
-                st.metric("Time Format", result.get('final_reply_lead_time_hhmmss', 'N/A'))
-        else:
-            st.metric("Status", "Not Found")
     
     # Performance Metrics
     st.markdown("#### 📊 Performance Metrics")
@@ -1556,6 +1498,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
