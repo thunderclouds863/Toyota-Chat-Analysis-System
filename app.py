@@ -640,7 +640,7 @@ def display_issue_types_tab(results, stats):
                 'First Reply': '✅' if result['first_reply_found'] else '❌',
                 'Final Reply': '✅' if result['final_reply_found'] else '❌',
                 'First LT (min)': result.get('first_reply_lead_time_minutes', 'N/A'),
-                'Final LT': self._format_lead_time(result),
+                'Final LT': _format_lead_time(result),  # PERBAIKAN: panggil function biasa
                 'Performance': result['performance_rating'].upper(),
                 'Special Notes': ', '.join(special_notes) if special_notes else '-'
             })
@@ -662,8 +662,8 @@ def display_issue_types_tab(results, stats):
     else:
         st.info("No successful analyses to display")
 
-def _format_lead_time(self, result):
-    """Format lead time berdasarkan jenis issue"""
+def _format_lead_time(result):
+    """Format lead time berdasarkan jenis issue - PERBAIKAN: function biasa"""
     if result['final_issue_type'] == 'complaint' and result.get('final_reply_lead_time_days'):
         return f"{result['final_reply_lead_time_days']} days"
     elif result.get('final_reply_lead_time_minutes'):
@@ -976,7 +976,7 @@ def display_performance_tab(results, stats):
                 'Performance': result['performance_rating'].upper(),
                 'Quality Score': result['quality_score'],
                 'First Reply LT': result.get('first_reply_lead_time_minutes', 'N/A'),
-                'Final Reply LT': self._format_lead_time(result),
+                'Final Reply LT': _format_lead_time(result),  # PERBAIKAN: panggil function biasa
                 'First Reply': '✅' if result['first_reply_found'] else '❌',
                 'Final Reply': '✅' if result['final_reply_found'] else '❌',
                 'Special Notes': ', '.join(special_notes) if special_notes else '-'
@@ -1202,5 +1202,6 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
