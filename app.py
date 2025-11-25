@@ -174,8 +174,8 @@ def main_interface():
         
         max_tickets = st.slider(
             "Maximum Tickets to Analyze",
-            min_value=10,
-            max_value=1000,
+            min_value=0,
+            max_value=100000,
             value=100,
             help="Limit number of tickets for faster analysis"
         )
@@ -1639,6 +1639,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
