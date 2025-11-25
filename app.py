@@ -349,7 +349,7 @@ def display_enhanced_results():
     # QUICK OVERVIEW METRICS - PROFESSIONAL STYLE
     st.markdown("## 📈 Executive Summary")
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         total_tickets = stats.get('total_tickets', 0)
@@ -370,23 +370,6 @@ def display_enhanced_results():
         """, unsafe_allow_html=True)
 
     with col3:
-        if 'lead_time_stats' in stats:
-            avg_final_lt = stats['lead_time_stats'].get('final_reply_avg_minutes', 0)
-            if avg_final_lt > 60:
-                display_lt = f"{avg_final_lt/60:.1f}h"
-            else:
-                display_lt = f"{avg_final_lt:.0f}m"
-        else:
-            display_lt = "N/A"
-        
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>Avg Resolution Time</h3>
-            <h1>{display_lt}</h1>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col4:
         if 'reply_effectiveness' in stats:
             final_reply_rate = stats['reply_effectiveness'].get('final_reply_found_rate', 0) * 100
         else:
@@ -547,12 +530,8 @@ def display_professional_overview_tab(results, stats):
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            first_avg = lt_stats.get('first_reply_avg_minutes', 0)
-            if first_avg > 60:
-                display_first = f"{first_avg/60:.1f} hours"
-            else:
-                display_first = f"{first_avg:.0f} minutes"
-            st.metric("First Reply Time", display_first)
+            first_avg = lt_stats.get('first_reply_lead_time_minutes', 0)
+            st.metric("first_avg")
         
         with col2:
             final_avg = lt_stats.get('final_reply_avg_minutes', 0)
@@ -1461,6 +1440,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
