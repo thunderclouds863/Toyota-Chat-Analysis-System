@@ -404,8 +404,8 @@ def display_enhanced_results():
 
     # TABS - PROFESSIONAL LAYOUT
     st.markdown("---")
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 Overview", "🎯 Issue Types", "⏱️ Lead Times", "📈 Performance", "🚨 Special Cases", "🔍 Raw Data"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "📊 Overview", "🎯 Issue Types", "⏱️ Lead Times", "📈 Performance", "🚨 Special Cases", "🔍 All Data", "🐛 Debug"
     ])
     
     with tab1:
@@ -425,6 +425,9 @@ def display_enhanced_results():
     
     with tab6:
         display_raw_data_tab(results)
+
+    with tab7:
+        display_debug_tab(results, stats)
 
     # NEW ANALYSIS BUTTON
     st.markdown("---")
@@ -1438,3 +1441,4 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
