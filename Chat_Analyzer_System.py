@@ -201,7 +201,7 @@ class DataPreprocessor:
             print("⚠️ No complaint data or phone column not found")
             return complaint_tickets
         
-        # Extract phones dari raw data
+        # Extract phones dari raw data - PERBAIKAN: gunakan raw_df yang benar
         raw_phones = self._extract_phones_from_raw_data(raw_df)
         
         for _, complaint_row in complaint_df.iterrows():
@@ -741,141 +741,28 @@ class ReplyAnalyzer:
         except:
             return "00:00:00"
 
-# Complete Analysis Pipeline
 class CompleteAnalysisPipeline:
     def __init__(self, complaint_data_path=None):
         self.preprocessor = DataPreprocessor()
         self.parser = ConversationParser()
         self.issue_detector = MainIssueDetector()
         self.complaint_tickets = {}
-        
-        # Load complaint data jika ada
-        if complaint_data_path and os.path.exists(complaint_data_path):
-            complaint_df = self.preprocessor.load_complaint_data(complaint_data_path)
-            self.complaint_tickets = self.preprocessor.match_complaint_tickets(pd.DataFrame(), complaint_df)
-        
-        self.reply_analyzer = ReplyAnalyzer(self.complaint_tickets)
-        self.results = []
-        self.analysis_stats = {}
+        self.complaint_data_path = complaint_data_path  # Simpan path untuk nanti
         
         print("🚀 Complete Analysis Pipeline Initialized")
     
-    def analyze_single_ticket(self, ticket_df, ticket_id):
-        """Analisis lengkap untuk single ticket"""
-        print(f"🎯 Analyzing Ticket: {ticket_id}")
-        
-        try:
-            # Step 1: Parse Q-A pairs
-            qa_pairs = self.parser.parse_conversation(ticket_df)
-            
-            if not qa_pairs:
-                return self._create_ticket_result(ticket_id, "failed", "No Q-A pairs detected", {})
-            
-            print(f"   ✓ Found {len(qa_pairs)} Q-A pairs")
-            
-            # Step 2: Detect main issue
-            main_issue = self.issue_detector.detect_main_issue(qa_pairs)
-            
-            if not main_issue:
-                return self._create_ticket_result(ticket_id, "failed", "No main issue detected", {})
-            
-            print(f"   ✓ Main issue detected: {main_issue['question'][:50]}...")
-            
-            # Step 3: Analyze replies dengan LOGIC BARU
-            reply_analysis = self.reply_analyzer.analyze_replies(ticket_id, ticket_df, qa_pairs, main_issue)
-            
-            print(f"   ✓ Reply analysis: {reply_analysis['issue_type']}")
-            
-            # Step 4: Compile results
-            result = self._compile_ticket_result(
-                ticket_id, ticket_df, qa_pairs, main_issue, reply_analysis
-            )
-            
-            print(f"   ✅ Analysis completed")
-            return result
-            
-        except Exception as e:
-            error_msg = f"Error: {str(e)}"
-            print(f"   ❌ Analysis failed: {error_msg}")
-            return self._create_ticket_result(ticket_id, "failed", error_msg, {})
-    
-    def _compile_ticket_result(self, ticket_id, ticket_df, qa_pairs, main_issue, reply_analysis):
-        """Compile ticket result"""
-        # Hitung quality score
-        quality_score = 0
-        if reply_analysis['first_reply']:
-            quality_score += 2
-        if reply_analysis['final_reply']:
-            quality_score += 2
-        if not reply_analysis['customer_leave']:
-            quality_score += 1
-        
-        # Tentukan performance rating
-        if reply_analysis['requirement_compliant']:
-            performance_rating = 'good'
-        else:
-            performance_rating = 'fair'
-        
-        result = {
-            'ticket_id': ticket_id,
-            'status': 'success',
-            'analysis_timestamp': datetime.now(),
-            
-            # Conversation info
-            'total_messages': len(ticket_df),
-            'total_qa_pairs': len(qa_pairs),
-            'answered_pairs': sum(1 for pair in qa_pairs if pair['is_answered']),
-            'customer_leave': reply_analysis['customer_leave'],
-            
-            # Main issue analysis
-            'main_question': main_issue['question'],
-            'main_question_time': main_issue['question_time'],
-            'final_issue_type': reply_analysis['issue_type'],
-            
-            # Reply analysis
-            'first_reply_found': reply_analysis['first_reply'] is not None,
-            'final_reply_found': reply_analysis['final_reply'] is not None,
-            'first_reply_message': reply_analysis['first_reply']['message'] if reply_analysis['first_reply'] else None,
-            'first_reply_time': reply_analysis['first_reply']['timestamp'] if reply_analysis['first_reply'] else None,
-            'final_reply_message': reply_analysis['final_reply']['message'] if reply_analysis['final_reply'] else None,
-            'final_reply_time': reply_analysis['final_reply']['timestamp'] if reply_analysis['final_reply'] else None,
-            
-            # Lead times
-            'first_reply_lead_time_minutes': reply_analysis['first_reply'].get('lead_time_minutes') if reply_analysis['first_reply'] else None,
-            'final_reply_lead_time_minutes': reply_analysis['final_reply'].get('lead_time_minutes') if reply_analysis['final_reply'] else None,
-            'first_reply_lead_time_hhmmss': reply_analysis['first_reply'].get('lead_time_hhmmss') if reply_analysis['first_reply'] else None,
-            'final_reply_lead_time_hhmmss': reply_analysis['final_reply'].get('lead_time_hhmmss') if reply_analysis['final_reply'] else None,
-            
-            # Untuk complaint
-            'final_reply_lead_time_days': reply_analysis['final_reply'].get('lead_time_days') if reply_analysis['final_reply'] else None,
-            
-            # Performance metrics
-            'performance_rating': performance_rating,
-            'quality_score': quality_score,
-            'quality_rating': 'good' if quality_score >= 4 else 'fair' if quality_score >= 2 else 'poor',
-            'requirement_compliant': reply_analysis['requirement_compliant'],
-            
-            # Raw data
-            '_raw_qa_pairs': qa_pairs,
-            '_raw_reply_analysis': reply_analysis
-        }
-        
-        return result
-    
-    def _create_ticket_result(self, ticket_id, status, reason, extra_data):
-        """Create standardized result object"""
-        result = {
-            'ticket_id': ticket_id,
-            'status': status,
-            'failure_reason': reason if status == 'failed' else None,
-            'analysis_timestamp': datetime.now()
-        }
-        result.update(extra_data)
-        return result
-    
     def analyze_all_tickets(self, df, max_tickets=None):
-        """Analisis semua tickets"""
+        """Analisis semua tickets dengan complaint matching yang benar"""
         print("🚀 STARTING COMPLETE ANALYSIS PIPELINE")
+        
+        # PERBAIKAN: Load complaint data di sini setelah punya raw_df
+        if self.complaint_data_path and os.path.exists(self.complaint_data_path):
+            complaint_df = self.preprocessor.load_complaint_data(self.complaint_data_path)
+            # PERBAIKAN: Pass raw_df yang benar untuk matching
+            self.complaint_tickets = self.preprocessor.match_complaint_tickets(df, complaint_df)
+        
+        # PERBAIKAN: Initialize reply analyzer dengan complaint_tickets yang sudah di-load
+        self.reply_analyzer = ReplyAnalyzer(self.complaint_tickets)
         
         ticket_ids = df['Ticket Number'].unique()
         
@@ -910,68 +797,48 @@ class CompleteAnalysisPipeline:
         
         return self.results, self.analysis_stats
     
-    def _calculate_stats(self, total_tickets):
-        """Hitung statistics dari results"""
-        successful = [r for r in self.results if r['status'] == 'success']
-        failed = [r for r in self.results if r['status'] == 'failed']
+    def analyze_single_ticket(self, ticket_df, ticket_id):
+        """Analisis lengkap untuk single ticket"""
+        print(f"🎯 Analyzing Ticket: {ticket_id}")
         
-        stats = {
-            'total_tickets': len(self.results),
-            'successful_analysis': len(successful),
-            'failed_analysis': len(failed),
-            'success_rate': len(successful) / len(self.results) if self.results else 0
-        }
-        
-        if successful:
-            # Issue type distribution
-            issue_types = [r['final_issue_type'] for r in successful]
-            stats['issue_type_distribution'] = dict(Counter(issue_types))
+        try:
+            # Step 1: Parse Q-A pairs
+            qa_pairs = self.parser.parse_conversation(ticket_df)
             
-            # Performance metrics
-            performance_ratings = [r['performance_rating'] for r in successful]
-            stats['performance_distribution'] = dict(Counter(performance_ratings))
+            if not qa_pairs:
+                return self._create_ticket_result(ticket_id, "failed", "No Q-A pairs detected", {})
             
-            # Lead time statistics
-            first_lead_times = [r['first_reply_lead_time_minutes'] for r in successful if r.get('first_reply_lead_time_minutes')]
-            final_lead_times = [r['final_reply_lead_time_minutes'] for r in successful if r.get('final_reply_lead_time_minutes')]
+            print(f"   ✓ Found {len(qa_pairs)} Q-A pairs")
             
-            stats['lead_time_stats'] = {
-                'first_reply_avg_minutes': np.mean(first_lead_times) if first_lead_times else 0,
-                'final_reply_avg_minutes': np.mean(final_lead_times) if final_lead_times else 0,
-                'first_reply_samples': len(first_lead_times),
-                'final_reply_samples': len(final_lead_times)
-            }
+            # Step 2: Detect main issue
+            main_issue = self.issue_detector.detect_main_issue(qa_pairs)
             
-            # Reply effectiveness
-            stats['reply_effectiveness'] = {
-                'first_reply_found_rate': sum(1 for r in successful if r['first_reply_found']) / len(successful),
-                'final_reply_found_rate': sum(1 for r in successful if r['final_reply_found']) / len(successful),
-                'customer_leave_cases': sum(1 for r in successful if r['customer_leave'])
-            }
-        
-        return stats
-    
-    def _print_summary_report(self):
-        """Print summary report"""
-        stats = self.analysis_stats
-        
-        print(f"📊 ANALYSIS SUMMARY REPORT")
-        print(f"   • Total Tickets: {stats['total_tickets']}")
-        print(f"   • Successful Analysis: {stats['successful_analysis']} ({stats['success_rate']*100:.1f}%)")
-        
-        if 'issue_type_distribution' in stats:
-            print(f"   • Issue Types: {stats['issue_type_distribution']}")
-        
-        if 'lead_time_stats' in stats:
-            lt_stats = stats['lead_time_stats']
-            print(f"   • Avg First Reply: {lt_stats['first_reply_avg_minutes']:.1f} min")
-            print(f"   • Avg Final Reply: {lt_stats['final_reply_avg_minutes']:.1f} min")
-        
-        if 'reply_effectiveness' in stats:
-            eff = stats['reply_effectiveness']
-            print(f"   • First Reply Found: {eff['first_reply_found_rate']*100:.1f}%")
-            print(f"   • Final Reply Found: {eff['final_reply_found_rate']*100:.1f}%")
-            print(f"   • Customer Leave Cases: {eff['customer_leave_cases']}")
+            if not main_issue:
+                return self._create_ticket_result(ticket_id, "failed", "No main issue detected", {})
+            
+            print(f"   ✓ Main issue detected: {main_issue['question'][:50]}...")
+            
+            # Step 3: Analyze replies dengan LOGIC BARU
+            # PERBAIKAN: Pastikan reply_analyzer sudah di-initialize
+            if not hasattr(self, 'reply_analyzer'):
+                self.reply_analyzer = ReplyAnalyzer(self.complaint_tickets)
+                
+            reply_analysis = self.reply_analyzer.analyze_replies(ticket_id, ticket_df, qa_pairs, main_issue)
+            
+            print(f"   ✓ Reply analysis: {reply_analysis['issue_type']}")
+            
+            # Step 4: Compile results
+            result = self._compile_ticket_result(
+                ticket_id, ticket_df, qa_pairs, main_issue, reply_analysis
+            )
+            
+            print(f"   ✅ Analysis completed")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error: {str(e)}"
+            print(f"   ❌ Analysis failed: {error_msg}")
+            return self._create_ticket_result(ticket_id, "failed", error_msg, {})
 
 # Results Exporter
 class ResultsExporter:
@@ -1064,3 +931,4 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
