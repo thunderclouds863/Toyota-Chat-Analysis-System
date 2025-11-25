@@ -483,14 +483,21 @@ def display_enhanced_overview_tab(results, stats):
         else:
             st.info("No performance distribution data available")
     
-    st.markdown("### 🚨 Special Cases Summary")
-    col1= st.columns(1)
-    
-    with col1:
-        st.markdown('<div class="special-case">', unsafe_allow_html=True)
-        st.metric("Customer Leave Cases", eff.get('customer_leave_cases', 0))
-        st.caption("Detected by Ticket Automation messages")
-        st.markdown('</div>', unsafe_allow_html=True)
+   if 'reply_effectiveness' in stats:
+        eff = stats['reply_effectiveness']
+        complaint_cases = stats.get('issue_type_distribution', {}).get('complaint', 0)
+        
+        if eff.get('customer_leave_cases', 0) > 0 or complaint_cases > 0:
+            st.markdown("---")
+            st.markdown("## 🚨 Special Cases Summary")
+            
+            col1= st.columns(1)
+            
+            with col1:
+                st.markdown('<div class="special-case">', unsafe_allow_html=True)
+                st.metric("Customer Leave Cases", eff.get('customer_leave_cases', 0))
+                st.caption("Detected by Ticket Automation messages")
+                st.markdown('</div>', unsafe_allow_html=True)
     
     # Enhanced Summary Statistics
     st.markdown("### 📊 Summary Statistics")
@@ -1619,6 +1626,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
