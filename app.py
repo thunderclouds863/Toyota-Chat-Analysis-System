@@ -804,24 +804,12 @@ def display_enhanced_special_cases_tab(results, stats):
         if has_leave_keyword and not r.get('customer_leave'):
             false_leave_cases.append(r)
     
-    complaint_cases = [r for r in successful if r['final_issue_type'] == 'complaint']
-    serious_cases = [r for r in successful if r['final_issue_type'] == 'serious']
-    
     # SUMMARY CARDS
     st.markdown("### 📊 Special Cases Summary")
-    col1, col2, col3, col4 = st.columns(4)
+    col1 = st.columns(1)
     
     with col1:
         st.metric("True Customer Leave", len(customer_leave_cases))
-    
-    with col2:
-        st.metric("False Customer Leave", len(false_leave_cases))
-    
-    with col3:
-        st.metric("Complaint Cases", len(complaint_cases))
-    
-    with col4:
-        st.metric("Serious Cases", len(serious_cases))
     
     # TRUE CUSTOMER LEAVE CASES
     st.markdown("---")
@@ -846,29 +834,6 @@ def display_enhanced_special_cases_tab(results, stats):
             st.dataframe(df_leave, use_container_width=True)
     else:
         st.success("✅ No true customer leave cases detected")
-    
-    # FALSE CUSTOMER LEAVE CASES (NEW SECTION)
-    if false_leave_cases:
-        st.markdown("---")
-        st.markdown("### ⚠️ False Customer Leave Cases (Has Replies)")
-        
-        st.warning(f"**{len(false_leave_cases)} conversations** with customer leave keyword BUT proper replies found")
-        
-        with st.expander("View False Customer Leave Details", expanded=True):
-            false_leave_data = []
-            for result in false_leave_cases:
-                false_leave_data.append({
-                    'Ticket ID': result['ticket_id'],
-                    'Issue Type': result['final_issue_type'].upper(),
-                    'Main Question': result['main_question'][:60] + '...',
-                    'First Reply': '✅ Found' if result['first_reply_found'] else '❌ Missing',
-                    'Final Reply': '✅ Found' if result['final_reply_found'] else '❌ Missing',
-                    'Performance': result['performance_rating'].upper(),
-                    'Note': 'Replies found despite leave keyword'
-                })
-            
-            df_false_leave = pd.DataFrame(false_leave_data)
-            st.dataframe(df_false_leave, use_container_width=True)
 
 def display_enhanced_lead_time_tab(results, stats):
     """Display enhanced lead time analysis"""
@@ -1591,6 +1556,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
