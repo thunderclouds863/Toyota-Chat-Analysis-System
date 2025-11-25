@@ -1,4 +1,4 @@
-# app.py - FIXED Streamlit Dashboard dengan REAL Analysis
+# app.py - FIXED Streamlit Dashboard dengan NEW REQUIREMENTS
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -15,10 +15,9 @@ import traceback
 # Import analysis modules
 sys.path.append('.')
 try:
-    # Import semua class yang diperlukan
-    from Chat_Analyzer_System import (
+    from chat_analyzer import (
         DataPreprocessor, CompleteAnalysisPipeline, 
-        ResultsExporter, ModelTrainer, Config
+        ComplaintMatcher, Config
     )
     ANALYSIS_AVAILABLE = True
 except ImportError as e:
@@ -26,7 +25,7 @@ except ImportError as e:
     ANALYSIS_AVAILABLE = False
 
 st.set_page_config(
-    page_title="Live Chat Analysis Dashboard",
+    page_title="Live Chat Analysis Dashboard - NEW REQUIREMENTS",
     page_icon="🤖", 
     layout="wide",
     initial_sidebar_state="expanded"
@@ -54,12 +53,10 @@ st.markdown("""
         overflow: hidden;
         transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
-
     .metric-card:hover {
         transform: translateY(-5px);
         box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
     }
-
     .metric-card h3 {
         font-size: 0.85rem;
         color: rgba(255, 255, 255, 0.9);
@@ -68,43 +65,12 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 1px;
     }
-
     .metric-card h1 {
         font-size: 2.2rem;
         color: white;
         margin: 0;
         font-weight: 700;
         text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    }
-
-    .metric-card .trend {
-        font-size: 0.75rem;
-        margin-top: 8px;
-        padding: 4px 8px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.2);
-        display: inline-block;
-    }
-    .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        border-radius: 5px;
-        padding: 15px;
-        margin: 10px 0;
-    }
-    .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        border-radius: 5px;
-        padding: 15px;
-        margin: 10px 0;
-    }
-    .message-box {
-        background-color: #f8f9fa;
-        border-left: 4px solid #007bff;
-        padding: 10px;
-        margin: 10px 0;
-        border-radius: 4px;
     }
     .special-case {
         background-color: #e7f3ff;
@@ -113,13 +79,20 @@ st.markdown("""
         margin: 5px 0;
         border-radius: 4px;
     }
+    .complaint-case {
+        background-color: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 def main_interface():
-    """Main interface dengan upload dan analysis options"""
-    st.markdown('<h1 class="main-header">🤖 Live Chat Lead Time Analysis</h1>', unsafe_allow_html=True)
-    st.markdown("Upload your chat data Excel file for Live Chat performance analysis")
+    """Main interface dengan upload dua file"""
+    st.markdown('<h1 class="main-header">🤖 Live Chat Analysis - NEW REQUIREMENTS</h1>', unsafe_allow_html=True)
+    st.markdown("Upload both conversation data and complaint data for complete analysis")
     
     # Initialize session state
     if 'analysis_complete' not in st.session_state:
@@ -128,39 +101,32 @@ def main_interface():
         st.session_state.analysis_results = None
     if 'analysis_stats' not in st.session_state:
         st.session_state.analysis_stats = None
-    if 'excel_file_path' not in st.session_state:
-        st.session_state.excel_file_path = None
     
     # Sidebar untuk upload
     with st.sidebar:
-        st.header("📁 Data Upload")
+        st.header("📁 Data Upload (REQUIRED BOTH)")
         
-        uploaded_file = st.file_uploader(
-            "Upload Excel File", 
+        # File 1: Raw Conversation
+        st.subheader("1. Raw Conversation Data")
+        conversation_file = st.file_uploader(
+            "Upload Conversation Excel File", 
             type=['xlsx', 'xls'],
-            help="Format kolom: No, Ticket Number, Role, Sender, Message Date, Message"
+            help="Format: No, Ticket Number, Role, Sender, Message Date, Message"
         )
         
-        if uploaded_file is not None:
-            st.success(f"✅ File uploaded: {uploaded_file.name}")
+        # File 2: Complaint Data  
+        st.subheader("2. Complaint Data")
+        complaint_file = st.file_uploader(
+            "Upload Complaint Excel File",
+            type=['xlsx', 'xls'],
+            help="Format: Must contain No.Handphone, Lead Time (Solved), Ticket Number columns"
+        )
+        
+        if conversation_file is not None:
+            st.success(f"✅ Conversation file: {conversation_file.name}")
             
-            # Preview data
-            if st.checkbox("Preview uploaded data"):
-                try:
-                    df_preview = pd.read_excel(uploaded_file)
-                    st.write(f"Data shape: {df_preview.shape}")
-                    st.dataframe(df_preview.head(10))
-                    
-                    # Check required columns
-                    required_cols = ['Ticket Number', 'Role', 'Sender', 'Message Date', 'Message']
-                    missing_cols = [col for col in required_cols if col not in df_preview.columns]
-                    if missing_cols:
-                        st.error(f"❌ Missing required columns: {missing_cols}")
-                    else:
-                        st.success("✅ All required columns present")
-                        
-                except Exception as e:
-                    st.error(f"Error previewing data: {e}")
+        if complaint_file is not None:
+            st.success(f"✅ Complaint file: {complaint_file.name}")
         
         st.markdown("---")
         st.header("⚙️ Analysis Settings")
@@ -168,172 +134,102 @@ def main_interface():
         max_tickets = st.slider(
             "Maximum Tickets to Analyze",
             min_value=10,
-            max_value=100000,
+            max_value=1000,
             value=100,
             help="Limit number of tickets for faster analysis"
         )
         
-        analysis_type = st.radio(
-            "Analysis Type",
-            ["Quick Analysis", "Comprehensive Analysis"],
-            help="Quick: Basic metrics, Comprehensive: Full analysis dengan ML"
-        )
-        
         st.markdown("---")
         
-        # Analysis Button di Sidebar
-        if uploaded_file is not None:
+        # Analysis Button
+        if conversation_file is not None and complaint_file is not None:
             if st.button("🚀 START ANALYSIS", type="primary", use_container_width=True):
-                with st.spinner("🔄 Starting analysis..."):
-                    results, stats, excel_path = run_analysis(uploaded_file, max_tickets, analysis_type)
+                with st.spinner("🔄 Starting analysis with new requirements..."):
+                    results, stats = run_analysis(conversation_file, complaint_file, max_tickets)
                     
                     if results is not None and stats is not None:
                         st.session_state.analysis_complete = True
                         st.session_state.analysis_results = results
                         st.session_state.analysis_stats = stats
-                        st.session_state.excel_file_path = excel_path
                         st.rerun()
                     else:
                         st.error("❌ Analysis failed. Please check your data format.")
-        
-        st.markdown("---")
-        st.markdown("### 📖 How to Use")
-        st.info("""
-        1. Upload an Excel file containing the chat data
-        2. Configure the analysis settings  
-        3. Click "Start Analysis"
-        4. View the results & download the reports
-        
-        **Required columns:**
-        - Ticket Number
-        - Role  
-        - Sender
-        - Message Date
-        - Message
-        """)
-    
-    # Main content area
-    if uploaded_file is not None:
-        st.markdown("---")
-        st.markdown("## 🚀 Ready for Analysis")
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        
-        with col2:
-            if st.button("🎯 Start Analysis", type="primary", use_container_width=True):
-                with st.spinner("🔄 Starting analysis..."):
-                    results, stats, excel_path = run_analysis(uploaded_file, max_tickets, analysis_type)
-                    
-                    if results is not None and stats is not None:
-                        st.session_state.analysis_complete = True
-                        st.session_state.analysis_results = results
-                        st.session_state.analysis_stats = stats
-                        st.session_state.excel_file_path = excel_path
-                        st.rerun()
-                    else:
-                        st.error("❌ Analysis failed. Please check your data format.")
-    
-    else:
-        # Show sample data option - FIXED VERSION
-        st.markdown("---")
-        st.markdown("## 🎯 Try with Sample Data")
-        
-        sample_file_path = "data/raw_conversation.xlsx"
-        if os.path.exists(sample_file_path):
-            if st.button("🧪 Analyze Sample Data", use_container_width=True):
-                with st.spinner("Loading sample data..."):
-                    try:
-                        # Use actual file path instead of MockFile
-                        results, stats, excel_path = run_analysis(sample_file_path, 50, "Quick Analysis")
-                        
-                        if results is not None and stats is not None:
-                            st.session_state.analysis_complete = True
-                            st.session_state.analysis_results = results
-                            st.session_state.analysis_stats = stats
-                            st.session_state.excel_file_path = excel_path
-                            st.rerun()
-                        else:
-                            st.error("Failed to analyze sample data")
-                    except Exception as e:
-                        st.error(f"Error analyzing sample data: {e}")
-                        st.error(traceback.format_exc())
         else:
-            st.info("📁 No sample data found. Please upload your own Excel file.")
+            st.warning("⚠️ Please upload both files to start analysis")
+        
+        st.markdown("---")
+        st.markdown("### 📖 New Requirements")
+        st.info("""
+        **Logic Changes:**
+        - 1 main question per ticket
+        - Support roles: Customer, Operator, Ticket Automation, Blank
+        - Complaint matching via phone number
+        - Customer leave detection (3 min timeout)
+        - Simplified issue classification
+        """)
 
-def run_direct_analysis(df, max_tickets, analysis_type):
-    """Run analysis langsung dari DataFrame - ROBUST VERSION"""
+def run_analysis(conversation_file, complaint_file, max_tickets):
+    """Run analysis dengan dua file"""
     try:
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        status_text.text("🔄 Initializing analysis pipeline...")
-        progress_bar.progress(10)
+        status_text.text("🔄 Loading files...")
+        progress_bar.progress(20)
         
-        # 1. PREPROCESS DATA - ROBUST APPROACH
-        status_text.text("📊 Preprocessing data...")
-        progress_bar.progress(30)
+        # 1. LOAD CONVERSATION DATA
+        df = pd.read_excel(conversation_file)
+        st.success(f"✅ Loaded {len(df)} conversation rows")
         
-        # Coba beberapa approach untuk preprocessing
-        processed_data = None
+        # 2. LOAD COMPLAINT DATA
+        complaint_df = pd.read_excel(complaint_file)
+        st.success(f"✅ Loaded {len(complaint_df)} complaint records")
         
-        # Approach 1: Langsung gunakan DataFrame yang sudah clean
-        try:
-            preprocessor = DataPreprocessor()
-            # Coba method clean_data
-            if hasattr(preprocessor, 'clean_data'):
-                processed_data = preprocessor.clean_data(df)
-                st.info("✅ Used clean_data method for preprocessing")
-            # Coba method load_raw_data (jika ada)
-            elif hasattr(preprocessor, 'load_raw_data'):
-                # Simpan ke file temporary dulu
-                import tempfile
-                with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
-                    df.to_excel(tmp_file.name, index=False)
-                    processed_data = preprocessor.load_raw_data(tmp_file.name)
-                st.info("✅ Used load_raw_data method for preprocessing")
-            else:
-                # Fallback: langsung gunakan DataFrame asli
-                processed_data = df
-                st.info("✅ Using original DataFrame (no preprocessing needed)")
-        except Exception as e:
-            st.warning(f"⚠️ Preprocessing failed: {e}. Using original DataFrame.")
-            processed_data = df
+        # 3. CHECK REQUIRED COLUMNS
+        required_conv_cols = ['Ticket Number', 'Role', 'Sender', 'Message Date', 'Message']
+        missing_conv_cols = [col for col in required_conv_cols if col not in df.columns]
         
-        if processed_data is None or len(processed_data) == 0:
-            st.error("❌ No data available for analysis")
-            return None, None, None
+        required_comp_cols = ['No.Handphone', 'Lead Time (Solved)']
+        missing_comp_cols = [col for col in required_comp_cols if col not in complaint_df.columns]
+        
+        if missing_conv_cols:
+            st.error(f"❌ Missing columns in conversation data: {missing_conv_cols}")
+            return None, None
             
-        st.success(f"✅ Ready to analyze {len(processed_data)} rows")
+        if missing_comp_cols:
+            st.error(f"❌ Missing columns in complaint data: {missing_comp_cols}")
+            return None, None
         
-        # 2. RUN ANALYSIS PIPELINE
-        status_text.text("🔍 Analyzing conversations with AI...")
+        status_text.text("🔄 Initializing analysis pipeline...")
+        progress_bar.progress(40)
+        
+        # 4. INITIALIZE AND RUN PIPELINE
+        pipeline = CompleteAnalysisPipeline()
+        
+        # Load complaint data ke pipeline
+        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_complaint:
+            complaint_df.to_excel(tmp_complaint.name, index=False)
+            pipeline.load_complaint_data(tmp_complaint.name)
+        
+        status_text.text("🔍 Analyzing conversations...")
         progress_bar.progress(60)
         
-        pipeline = CompleteAnalysisPipeline()
-        results, stats = pipeline.analyze_all_tickets(processed_data, max_tickets=max_tickets)
+        # Preprocess data
+        preprocessor = DataPreprocessor()
+        processed_df = preprocessor.clean_data(df)
+        
+        # Run analysis
+        results, stats = pipeline.analyze_all_tickets(processed_df, max_tickets=max_tickets)
+        
+        status_text.text("💾 Generating results...")
+        progress_bar.progress(80)
         
         if not results:
-            st.error("❌ No results generated from analysis")
-            return None, None, None
+            st.error("❌ No results generated")
+            return None, None
             
         successful = [r for r in results if r['status'] == 'success']
         st.success(f"✅ Successfully analyzed {len(successful)} conversations")
-        
-        # 3. EXPORT RESULTS
-        status_text.text("💾 Generating comprehensive report...")
-        progress_bar.progress(80)
-        
-        exporter = ResultsExporter()
-        excel_path = exporter.export_comprehensive_results(results, stats)
-        
-        # 4. CREATE VISUALIZATIONS
-        status_text.text("📊 Creating visualizations...")
-        progress_bar.progress(95)
-        
-        try:
-            exporter.create_comprehensive_visualizations(results, stats)
-        except Exception as e:
-            st.warning(f"Visualizations skipped: {e}")
         
         progress_bar.progress(100)
         status_text.text("✅ Analysis complete!")
@@ -342,65 +238,25 @@ def run_direct_analysis(df, max_tickets, analysis_type):
         progress_bar.empty()
         status_text.empty()
         
-        return results, stats, excel_path
+        return results, stats
         
     except Exception as e:
         st.error(f"❌ Analysis error: {str(e)}")
         st.error(f"Detailed error: {traceback.format_exc()}")
-        return None, None, None
+        return None, None
 
-def run_analysis(uploaded_file, max_tickets, analysis_type):
-    """Run analysis pada uploaded file - FIXED VERSION"""
-    
-    try:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        status_text.text("🔄 Loading uploaded file...")
-        progress_bar.progress(20)
-        
-        # 1. LOAD DATA DARI UPLOADED FILE
-        if hasattr(uploaded_file, 'read'):
-            # Untuk file yang diupload via Streamlit
-            df = pd.read_excel(uploaded_file)
-            st.success(f"✅ Loaded {len(df)} rows from uploaded file")
-        elif isinstance(uploaded_file, str) and os.path.exists(uploaded_file):
-            # Untuk file path (sample data)
-            df = pd.read_excel(uploaded_file)
-            st.success(f"✅ Loaded {len(df)} rows from sample file")
-        else:
-            st.error("❌ Invalid file type or path")
-            return None, None, None
-        
-        # 2. CHECK REQUIRED COLUMNS
-        required_cols = ['Ticket Number', 'Role', 'Sender', 'Message Date', 'Message']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        
-        if missing_cols:
-            st.error(f"❌ Missing required columns: {missing_cols}")
-            return None, None, None
-        
-        # 3. RUN ANALYSIS
-        return run_direct_analysis(df, max_tickets, analysis_type)
-        
-    except Exception as e:
-        st.error(f"❌ File loading error: {str(e)}")
-        st.error(f"Detailed error: {traceback.format_exc()}")
-        return None, None, None
-        
 def display_complete_results():
-    """Display COMPLETE analysis results dengan semua tab dan download"""
+    """Display analysis results dengan new requirements"""
     
     results = st.session_state.analysis_results
     stats = st.session_state.analysis_stats
     
-    # Validasi stats
     if not stats:
         st.error("❌ No analysis statistics available")
         return
     
     st.markdown("---")
-    st.markdown('<h1 class="main-header">📊 Analysis Results</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">📊 Analysis Results - NEW REQUIREMENTS</h1>', unsafe_allow_html=True)
     
     # Quick Stats
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -452,14 +308,14 @@ def display_complete_results():
         
     with col5:
         if 'issue_type_distribution' in stats:
-            total_issues = sum(stats['issue_type_distribution'].values())
-            metric_value = total_issues
+            complaint_count = stats['issue_type_distribution'].get('complaint', 0)
+            metric_value = complaint_count
         else:
             metric_value = "N/A"
         
         st.markdown("""
         <div class="metric-card">
-            <h3>Issues Found</h3>
+            <h3>Complaints</h3>
             <h1>{}</h1>
         </div>
         """.format(metric_value), unsafe_allow_html=True)
@@ -467,54 +323,32 @@ def display_complete_results():
     # SPECIAL CASES SUMMARY
     if 'reply_effectiveness' in stats:
         eff = stats['reply_effectiveness']
-        if eff.get('customer_leave_cases', 0) > 0 or eff.get('follow_up_cases', 0) > 0:
+        if eff.get('customer_leave_cases', 0) > 0:
             st.markdown("---")
             st.markdown("## 🚨 Special Cases Summary")
             
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown('<div class="special-case">', unsafe_allow_html=True)
-                st.metric("Customer Leave Cases", eff.get('customer_leave_cases', 0))
-                st.caption("Conversations where customer left without response")
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown('<div class="special-case">', unsafe_allow_html=True)
-                st.metric("Follow-up Cases", eff.get('follow_up_cases', 0))
-                st.caption("Issues resolved in different tickets")
-                st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown('<div class="special-case">', unsafe_allow_html=True)
+            st.metric("Customer Leave Cases", eff.get('customer_leave_cases', 0))
+            st.caption("Conversations where customer left without response (3+ minutes no reply)")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    # DOWNLOAD SECTION
-    st.markdown("---")
-    st.markdown("## 💾 Download Complete Analysis Results")
+    # COMPLAINT CASES SUMMARY
+    successful = [r for r in results if r['status'] == 'success']
+    complaint_cases = [r for r in successful if r.get('is_complaint')]
     
-    if st.session_state.get('excel_file_path') and os.path.exists(st.session_state.excel_file_path):
-        with open(st.session_state.excel_file_path, "rb") as f:
-            excel_data = f.read()
+    if complaint_cases:
+        st.markdown("---")
+        st.markdown("## 📋 Complaint Cases Summary")
         
-        st.download_button(
-            label="📥 DOWNLOAD COMPLETE EXCEL REPORT",
-            data=excel_data,
-            file_name=f"chat_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary",
-            use_container_width=True
-        )
-        st.success("✅ Excel report contains ALL parsed data: Q-A pairs, main issues, reply analysis, timestamps, lead time summary, and detailed metrics!")
-        
-        # Show file info
-        file_size = os.path.getsize(st.session_state.excel_file_path) / (1024 * 1024)  # MB
-        st.info(f"📊 Report includes: Detailed analysis sheets with raw data ({file_size:.1f} MB)")
-    else:
-        st.error("❌ Excel file not available for download. Analysis may not have exported properly.")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="complaint-case">', unsafe_allow_html=True)
+        st.metric("Complaint Cases Matched", len(complaint_cases))
+        st.caption("Cases matched between conversation and complaint data via phone number")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # TABS
     st.markdown("---")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "📈 Overview", "🎯 Main Issues", "⏱️ Lead Times", "📊 Performance", "💬 Special Cases", "📋 All Data", "🐛 Debug"
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📈 Overview", "🎯 Main Issues", "⏱️ Lead Times", "📋 Complaint Cases", "🔍 All Data"
     ])
     
     with tab1:
@@ -527,16 +361,10 @@ def display_complete_results():
         display_lead_time_tab(results, stats)
     
     with tab4:
-        display_performance_tab(results, stats)
+        display_complaint_cases_tab(results)
     
     with tab5:
-        display_special_cases_tab(results, stats)
-    
-    with tab6:
         display_raw_data_tab(results)
-
-    with tab7:
-        display_debug_tab(results, stats)
 
     # NEW ANALYSIS BUTTON
     st.markdown("---")
@@ -544,7 +372,7 @@ def display_complete_results():
     with col2:
         if st.button("🔄 Analyze New Data", type="secondary", use_container_width=True):
             # Reset session state
-            for key in ['analysis_complete', 'analysis_results', 'analysis_stats', 'excel_file_path']:
+            for key in ['analysis_complete', 'analysis_results', 'analysis_stats']:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
@@ -582,10 +410,8 @@ def display_overview_tab(results, stats):
                 labels={'x': 'Performance Rating', 'y': 'Count'},
                 color=performances,
                 color_discrete_map={
-                    'excellent': '#2E86AB',
-                    'good': '#A23B72', 
-                    'fair': '#F18F01',
-                    'poor': '#C73E1D'
+                    'good': '#28a745',
+                    'fair': '#ffc107',
                 }
             )
             st.plotly_chart(fig_perf, use_container_width=True)
@@ -606,9 +432,9 @@ def display_overview_tab(results, stats):
         with col2:
             st.metric("Final Reply Avg", f"{lt_stats['final_reply_avg_minutes']:.1f} min")
         with col3:
-            st.metric("Count of First Reply", lt_stats['first_reply_samples'])
+            st.metric("First Reply Samples", lt_stats['first_reply_samples'])
         with col4:
-            st.metric("Count of Final Reply", lt_stats['final_reply_samples'])
+            st.metric("Final Reply Samples", lt_stats['final_reply_samples'])
     
     # Reply Effectiveness
     if 'reply_effectiveness' in stats:
@@ -621,11 +447,11 @@ def display_overview_tab(results, stats):
         with col2:
             st.metric("Final Reply Found", f"{eff['final_reply_found_rate']*100:.1f}%")
         with col3:
-            st.metric("Both Replies Found", f"{eff['both_replies_found_rate']*100:.1f}%")
+            st.metric("Customer Leave Cases", eff['customer_leave_cases'])
 
 def display_main_issues_tab(results):
-    """Display main issues dengan first/final reply details"""
-    st.markdown("## 🎯 Main Issues Analysis")
+    """Display main issues dengan new logic"""
+    st.markdown("## 🎯 Main Issues Analysis (1 Question per Ticket)")
     
     successful = [r for r in results if r['status'] == 'success']
     
@@ -642,12 +468,12 @@ def display_main_issues_tab(results):
             st.metric("Final Reply Found", f"{final_reply_found}/{len(successful)}")
         
         with col3:
-            both_replies_found = sum(1 for r in successful if r['first_reply_found'] and r['final_reply_found'])
-            st.metric("Both Replies Found", f"{both_replies_found}/{len(successful)}")
+            requirement_met = sum(1 for r in successful if r['requirement_compliant'])
+            st.metric("Requirements Met", f"{requirement_met}/{len(successful)}")
         
         with col4:
-            avg_quality = np.mean([r['quality_score'] for r in successful])
-            st.metric("Avg Quality Score", f"{avg_quality:.1f}/6")
+            complaint_cases = sum(1 for r in successful if r.get('is_complaint'))
+            st.metric("Complaint Cases", f"{complaint_cases}/{len(successful)}")
 
         # Main issues table
         st.markdown("### 📋 All Main Issues")
@@ -656,8 +482,8 @@ def display_main_issues_tab(results):
             special_notes = []
             if result.get('customer_leave'):
                 special_notes.append("🚶 Customer Leave")
-            if result.get('follow_up_ticket'):
-                special_notes.append("🔄 Follow-up")
+            if result.get('is_complaint'):
+                special_notes.append("📋 Complaint")
             
             display_data.append({
                 'Ticket ID': result['ticket_id'],
@@ -693,37 +519,18 @@ def display_ticket_details(result):
     
     # Main Question
     st.markdown("### 📝 Main Question")
-    st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
-    st.caption(f"Detected as: {result['final_issue_type'].upper()} (Confidence: {result['detection_confidence']:.2f})")
+    st.markdown(f'<div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #007bff;"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
+    st.caption(f"Detected as: {result['final_issue_type'].upper()}")
     
     # SPECIAL CASES SECTION
-    special_cases = result.get('_raw_reply_analysis', {}).get('special_cases', [])
-    if special_cases:
-        st.markdown("### 🚨 Special Conditions")
-        
-        for case in special_cases:
-            if case == 'customer_leave':
-                st.markdown(f'<div class="special-case">🚶 **Customer Leave**: Customer left conversation without response</div>', unsafe_allow_html=True)
-            elif case == 'escalation_reply':
-                st.markdown(f'<div class="special-case">🔄 **Escalation Required**: Issue needs follow-up from other team</div>', unsafe_allow_html=True)
-            elif case == 'first_as_final':
-                st.markdown(f'<div class="special-case">🔀 **First as Final**: Using first reply as final reply</div>', unsafe_allow_html=True)
-            elif case == 'customer_leave_final':
-                st.markdown(f'<div class="special-case">🚶 **Customer Leave Final**: Used last operator message due to customer leave</div>', unsafe_allow_html=True)
-            elif case == 'fallback_reply':
-                st.markdown(f'<div class="special-case">🔄 **Fallback Reply**: Used fallback reply method</div>', unsafe_allow_html=True)
-
-    # Additional special notes
     special_notes = []
     if result.get('customer_leave'):
-        special_notes.append("🚶 **Customer Leave**: Customer left conversation without response")
-    if result.get('follow_up_ticket'):
-        special_notes.append(f"🔄 **Follow-up**: Resolved in ticket {result['follow_up_ticket']}")
-    if result.get('customer_leave_note'):
-        special_notes.append(f"📝 **Note**: {result['customer_leave_note']}")
+        special_notes.append("🚶 **Customer Leave**: Customer left conversation without response (3+ minutes)")
+    if result.get('is_complaint'):
+        special_notes.append("📋 **Complaint Case**: Matched with complaint data via phone number")
     
     if special_notes:
-        st.markdown("### 📋 Additional Notes")
+        st.markdown("### 🚨 Special Conditions")
         for note in special_notes:
             st.markdown(f'<div class="special-case">{note}</div>', unsafe_allow_html=True)
     
@@ -734,7 +541,7 @@ def display_ticket_details(result):
     with col1:
         if result['first_reply_found']:
             first_reply_msg = result.get('first_reply_message', 'No message content available')
-            st.markdown(f'<div class="message-box"><strong>First Reply:</strong> {first_reply_msg}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background-color: #e8f5e8; padding: 15px; border-radius: 5px; border-left: 4px solid #28a745;"><strong>First Reply:</strong> {first_reply_msg}</div>', unsafe_allow_html=True)
         else:
             if result['final_issue_type'] in ['serious', 'complaint']:
                 st.error("❌ No first reply found - REQUIRED for serious/complaint issues")
@@ -755,18 +562,12 @@ def display_ticket_details(result):
     with col1:
         if result['final_reply_found']:
             final_reply_msg = result.get('final_reply_message', 'No message content available')
-            reply_type = result.get('_raw_reply_analysis', {}).get('final_reply', {}).get('reply_type', 'standard')
             
-            # Add reply type badge
-            type_badge = ""
-            if 'escalation' in reply_type:
-                type_badge = "🔄 "
-            elif 'customer_leave' in reply_type:
-                type_badge = "🚶 "
-            elif 'first_as_final' in reply_type:
-                type_badge = "🔀 "
-            
-            st.markdown(f'<div class="message-box"><strong>Final Reply ({type_badge}{reply_type.replace("_", " ").title()}):</strong> {final_reply_msg}</div>', unsafe_allow_html=True)
+            # Special handling untuk complaint
+            if result.get('is_complaint') and final_reply_msg == 'COMPLAINT_RESOLVED':
+                st.markdown(f'<div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107;"><strong>Final Reply (Complaint Resolution):</strong> Resolved in {result.get("final_lead_time_days", "N/A")} days (from complaint data)</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div style="background-color: #e8f5e8; padding: 15px; border-radius: 5px; border-left: 4px solid #28a745;"><strong>Final Reply:</strong> {final_reply_msg}</div>', unsafe_allow_html=True)
         else:
             if result['final_issue_type'] == 'normal' and not result.get('customer_leave'):
                 st.error("❌ No final reply found - REQUIRED for normal issues")
@@ -775,54 +576,20 @@ def display_ticket_details(result):
     
     with col2:
         if result['final_reply_found']:
-            st.metric("Lead Time", f"{result.get('final_reply_lead_time_minutes', 'N/A')} min")
-            st.metric("Time Format", result.get('final_reply_lead_time_hhmmss', 'N/A'))
+            if result.get('is_complaint') and result.get('final_lead_time_days'):
+                st.metric("Lead Time", f"{result['final_lead_time_days']} days")
+            else:
+                st.metric("Lead Time", f"{result.get('final_reply_lead_time_minutes', 'N/A')} min")
+                st.metric("Time Format", result.get('final_reply_lead_time_hhmmss', 'N/A'))
         else:
             st.metric("Status", "Not Found")
     
-    # Performance Metrics - SIMPLIFIED VERSION (tanpa delta_color)
+    # Performance Metrics
     st.markdown("#### 📊 Performance Metrics")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        # Simple metric tanpa delta_color
-        st.metric("Performance Rating", result['performance_rating'].upper())
-    
-    with col2:
-        st.metric("Quality Score", f"{result['quality_score']}/6")
-    
-    with col3:
-        st.metric("Total Messages", result['total_messages'])
-    
-    with col4:
-        answer_rate = (result['answered_pairs'] / result['total_qa_pairs']) * 100 if result['total_qa_pairs'] > 0 else 0
-        st.metric("Answer Rate", f"{answer_rate:.1f}%")
-    
-    # Conversation Statistics
-    st.markdown("#### 📈 Conversation Statistics")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Total Q-A Pairs", result['total_qa_pairs'])
-    
-    with col2:
-        st.metric("Answered Pairs", result['answered_pairs'])
-    
-    with col3:
-        st.metric("Unanswered Pairs", result['total_qa_pairs'] - result['answered_pairs'])
-    
-    # Performance Rating dengan color coding menggunakan HTML/CSS
-    st.markdown("#### 🎯 Performance Details")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        performance_color = {
-            'excellent': '#28a745',
-            'good': '#007bff', 
-            'fair': '#ffc107',
-            'poor': '#dc3545'
-        }.get(result['performance_rating'], '#6c757d')
-        
+        performance_color = "#28a745" if result['performance_rating'] == 'good' else "#ffc107"
         st.markdown(f"""
         <div style="background-color: {performance_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
             <h3 style="margin: 0; font-size: 1.2rem;">Performance Rating</h3>
@@ -831,43 +598,35 @@ def display_ticket_details(result):
         """, unsafe_allow_html=True)
     
     with col2:
-        quality_color = "#28a745" if result['quality_score'] >= 4 else "#ffc107" if result['quality_score'] >= 2 else "#dc3545"
+        quality_color = "#28a745" if result['quality_score'] >= 3 else "#ffc107"
         st.markdown(f"""
         <div style="background-color: {quality_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
             <h3 style="margin: 0; font-size: 1.2rem;">Quality Score</h3>
-            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['quality_score']}/6</h1>
+            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['quality_score']}/4</h1>
         </div>
         """, unsafe_allow_html=True)
     
-    # Raw Data Access (if available)
-    if st.checkbox("Show Raw Analysis Data"):
-        st.markdown("#### 🔧 Raw Analysis Data")
+    with col3:
+        st.metric("Requirement Compliant", "✅" if result['requirement_compliant'] else "❌")
+    
+    with col4:
+        st.metric("Total Messages", result['total_messages'])
+    
+    # Complaint Data (jika ada)
+    if result.get('complaint_data'):
+        st.markdown("#### 📋 Complaint Data")
+        complaint_data = result['complaint_data']
         
-        if '_raw_qa_pairs' in result:
-            with st.expander("Q-A Pairs Raw Data"):
-                qa_data = []
-                for i, pair in enumerate(result['_raw_qa_pairs']):
-                    qa_data.append({
-                        'Pair': i + 1,
-                        'Question': pair.get('question', '')[:100] + '...',
-                        'Answered': '✅' if pair.get('is_answered') else '❌',
-                        'Answer': pair.get('answer', '')[:100] + '...' if pair.get('answer') else 'No Answer',
-                        'Lead Time (min)': pair.get('lead_time_minutes', 'N/A')
-                    })
-                st.dataframe(pd.DataFrame(qa_data))
-        
-        if '_raw_main_issue' in result:
-            with st.expander("Main Issue Detection Details"):
-                main_issue = result['_raw_main_issue']
-                st.json(main_issue)
-        
-        if '_raw_reply_analysis' in result:
-            with st.expander("Reply Analysis Details"):
-                reply_analysis = result['_raw_reply_analysis']
-                st.json(reply_analysis)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Complaint Phone", complaint_data.get('complaint_phone', 'N/A'))
+        with col2:
+            st.metric("Lead Time (Days)", complaint_data.get('lead_time_days', 'N/A'))
+        with col3:
+            st.metric("Complaint Ticket", complaint_data.get('ticket_number', 'N/A'))
 
 def display_lead_time_tab(results, stats):
-    """Display lead time analysis dengan breakdown per issue type"""
+    """Display lead time analysis"""
     st.markdown("## ⏱️ Lead Time Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
@@ -883,93 +642,63 @@ def display_lead_time_tab(results, stats):
         with col2:
             st.metric("Final Reply Average", f"{overall_lt['final_reply_avg_minutes']:.1f} min")
         with col3:
-            st.metric("First Reply Median", f"{overall_lt['first_reply_median_minutes']:.1f} min")
+            st.metric("First Reply Samples", overall_lt['first_reply_samples'])
         with col4:
-            st.metric("Samples", f"{overall_lt['first_reply_samples']} / {overall_lt['final_reply_samples']}")
+            st.metric("Final Reply Samples", overall_lt['final_reply_samples'])
     
     # Lead Time by Issue Type
-    if 'issue_type_lead_times' in stats:
+    if successful:
         st.markdown("### 📈 Lead Time by Issue Type")
         
-        # Define the desired order
-        desired_order = ['normal', 'serious', 'complaint']
+        issue_data = {}
+        for result in successful:
+            issue_type = result['final_issue_type']
+            first_lt = result.get('first_reply_lead_time_minutes')
+            final_lt = result.get('final_reply_lead_time_minutes')
+            
+            if issue_type not in issue_data:
+                issue_data[issue_type] = {'first_times': [], 'final_times': []}
+            
+            if first_lt is not None:
+                issue_data[issue_type]['first_times'].append(first_lt)
+            if final_lt is not None:
+                issue_data[issue_type]['final_times'].append(final_lt)
         
-        issue_type_data = []
-        for issue_type in desired_order:
-            if issue_type in stats['issue_type_lead_times']:
-                lt_stats = stats['issue_type_lead_times'][issue_type]
-                first_avg = lt_stats.get('first_reply_avg_minutes')
-                final_avg = lt_stats.get('final_reply_avg_minutes')
-                
-                if first_avg is not None or final_avg is not None:
-                    issue_type_data.append({
-                        'Issue Type': issue_type.upper(),
-                        'First Reply Avg (min)': f"{first_avg:.1f}" if first_avg is not None else "N/A",
-                        'Final Reply Avg (min)': f"{final_avg:.1f}" if final_avg is not None else "N/A",
-                        'First Reply Samples': lt_stats['first_reply_samples'],
-                        'Final Reply Samples': lt_stats['final_reply_samples']
-                    })
+        # Create comparison chart
+        comparison_data = []
+        for issue_type, times in issue_data.items():
+            if times['first_times']:
+                comparison_data.append({
+                    'Issue Type': issue_type.upper(),
+                    'Lead Time Type': 'First Reply',
+                    'Average Lead Time (min)': np.mean(times['first_times']),
+                    'Samples': len(times['first_times'])
+                })
+            if times['final_times']:
+                comparison_data.append({
+                    'Issue Type': issue_type.upper(),
+                    'Lead Time Type': 'Final Reply', 
+                    'Average Lead Time (min)': np.mean(times['final_times']),
+                    'Samples': len(times['final_times'])
+                })
         
-        if issue_type_data:
-            df_issue_lt = pd.DataFrame(issue_type_data)
-            st.dataframe(df_issue_lt, use_container_width=True)
+        if comparison_data:
+            df_comparison = pd.DataFrame(comparison_data)
             
-            # Visualization
-            st.markdown("### 📊 Lead Time Comparison by Issue Type")
+            fig = px.bar(
+                df_comparison, 
+                x='Issue Type', 
+                y='Average Lead Time (min)', 
+                color='Lead Time Type',
+                title='Average Lead Time by Issue Type and Reply Type',
+                barmode='group',
+                color_discrete_map={
+                    'First Reply': '#2E86AB',
+                    'Final Reply': '#A23B72'
+                }
+            )
             
-            # Prepare data for visualization
-            viz_data = []
-            for issue_type in desired_order:
-                if issue_type in stats['issue_type_lead_times']:
-                    lt_stats = stats['issue_type_lead_times'][issue_type]
-                    first_avg = lt_stats.get('first_reply_avg_minutes')
-                    final_avg = lt_stats.get('final_reply_avg_minutes')
-                    
-                    if first_avg is not None:
-                        viz_data.append({
-                            'Issue Type': issue_type.upper(),
-                            'Lead Time Type': 'First Reply',
-                            'Average Lead Time (min)': first_avg,
-                            'Samples': lt_stats['first_reply_samples']
-                        })
-                    if final_avg is not None:
-                        viz_data.append({
-                            'Issue Type': issue_type.upper(),
-                            'Lead Time Type': 'Final Reply',
-                            'Average Lead Time (min)': final_avg,
-                            'Samples': lt_stats['final_reply_samples']
-                        })
-            
-            if viz_data:
-                df_viz = pd.DataFrame(viz_data)
-                
-                fig = px.bar(
-                    df_viz, 
-                    x='Issue Type', 
-                    y='Average Lead Time (min)', 
-                    color='Lead Time Type',
-                    title='Average Lead Time by Issue Type and Reply Type',
-                    barmode='group',
-                    labels={'Average Lead Time (min)': 'Average Lead Time (minutes)'},
-                    color_discrete_map={
-                        'First Reply': '#2E86AB',
-                        'Final Reply': '#A23B72'
-                    },
-                    category_orders={"Issue Type": [t.upper() for t in desired_order]}
-                )
-                
-                # Add sample size annotations
-                for i, row in df_viz.iterrows():
-                    fig.add_annotation(
-                        x=row['Issue Type'],
-                        y=row['Average Lead Time (min)'],
-                        text=f"n={row['Samples']}",
-                        showarrow=False,
-                        yshift=10,
-                        font=dict(size=10)
-                    )
-                
-                st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True)
     
     # Detailed Lead Time Distribution
     st.markdown("### 📊 Detailed Lead Time Distribution")
@@ -999,330 +728,71 @@ def display_lead_time_tab(results, stats):
             st.plotly_chart(fig_hist, use_container_width=True)
         
         with col2:
-            # Box plot
-            fig_box = px.box(
-                x=lead_times,
-                title='Final Reply Lead Time Distribution',
-                labels={'x': 'Lead Time (minutes)'},
-                color_discrete_sequence=['#A23B72']
-            )
-            st.plotly_chart(fig_box, use_container_width=True)
-        
-        # Statistics
-        st.markdown("#### 📈 Lead Time Statistics")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
+            # Statistics
+            st.markdown("#### 📈 Lead Time Statistics")
             st.metric("Mean", f"{np.mean(lead_times):.1f} min")
-        with col2:
-            st.metric("Median", f"{np.median(lead_times):.1f} min")
-        with col3:
+            st.metric("Median", f"{np.median(lead_times):.1f} min") 
             st.metric("Std Dev", f"{np.std(lead_times):.1f} min")
-        with col4:
             st.metric("Range", f"{np.min(lead_times):.1f} - {np.max(lead_times):.1f} min")
     else:
         st.info("No lead time data available for detailed analysis")
 
-def display_performance_tab(results, stats):
-    """Display performance analysis"""
-    st.markdown("## 📊 Performance Analysis")
+def display_complaint_cases_tab(results):
+    """Display complaint cases analysis"""
+    st.markdown("## 📋 Complaint Cases Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
+    complaint_cases = [r for r in successful if r.get('is_complaint')]
     
-    if successful:
-        # Performance by Issue Type
-        perf_data = []
-        for result in successful:
-            perf_data.append({
-                'issue_type': result['final_issue_type'],
-                'performance': result['performance_rating'],
-                'quality_score': result['quality_score']
-            })
+    if complaint_cases:
+        st.success(f"✅ Found {len(complaint_cases)} complaint cases matched via phone number")
         
-        df_perf = pd.DataFrame(perf_data)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Performance by Issue Type
-            perf_pivot = pd.crosstab(
-                df_perf['issue_type'], 
-                df_perf['performance']
-            ).reset_index()
+        # Complaint cases table
+        complaint_data = []
+        for result in complaint_cases:
+            complaint_info = result.get('complaint_data', {})
             
-            if len(perf_pivot) > 1:
-                fig_stacked = px.bar(
-                    perf_pivot, 
-                    x='issue_type',
-                    y=perf_pivot.columns[1:].tolist(),
-                    title='Performance Rating by Issue Type',
-                    labels={'value': 'Count', 'issue_type': 'Issue Type'},
-                    barmode='stack'
-                )
-                st.plotly_chart(fig_stacked, use_container_width=True)
-        
-        with col2:
-            # Quality Score Distribution
-            fig_quality = px.histogram(
-                df_perf, x='quality_score',
-                title='Quality Score Distribution',
-                labels={'x': 'Quality Score', 'y': 'Count'},
-                nbins=6,
-                color_discrete_sequence=['#F18F01']
-            )
-            st.plotly_chart(fig_quality, use_container_width=True)
-        
-        # Performance metrics table
-        st.markdown("### 📈 Detailed Performance Metrics")
-        perf_metrics = []
-        for result in successful:
-            special_notes = []
-            if result.get('customer_leave'):
-                special_notes.append("Customer Leave")
-            if result.get('follow_up_ticket'):
-                special_notes.append("Follow-up")
-            
-            perf_metrics.append({
+            complaint_data.append({
                 'Ticket ID': result['ticket_id'],
-                'Issue Type': result['final_issue_type'],
-                'Performance': result['performance_rating'].upper(),
-                'Quality Score': result['quality_score'],
-                'First Reply LT': result.get('first_reply_lead_time_minutes', 'N/A'),
-                'Final Reply LT': result.get('final_reply_lead_time_minutes', 'N/A'),
-                'First Reply': '✅' if result['first_reply_found'] else '❌',
-                'Final Reply': '✅' if result['final_reply_found'] else '❌',
-                'Special Notes': ', '.join(special_notes) if special_notes else '-'
+                'Main Question': result['main_question'][:80] + '...',
+                'Matched Phone': complaint_info.get('complaint_phone', 'N/A'),
+                'Complaint Ticket': complaint_info.get('ticket_number', 'N/A'),
+                'First Reply Found': '✅' if result['first_reply_found'] else '❌',
+                'Final Resolution Time': f"{result.get('final_lead_time_days', 'N/A')} days",
+                'First Reply LT (min)': result.get('first_reply_lead_time_minutes', 'N/A')
             })
         
-        df_perf_metrics = pd.DataFrame(perf_metrics)
-        st.dataframe(df_perf_metrics, use_container_width=True)
-
-def display_special_cases_tab(results, stats):
-    """Display special cases analysis dengan LOGIC BARU"""
-    st.markdown("## 🚨 Special Cases Analysis")
-    
-    successful = [r for r in results if r['status'] == 'success']
-    
-    # Extract special cases dengan LOGIC BARU yang SAFE
-    customer_leave_cases = [r for r in successful if r.get('customer_leave')]
-    
-    # Escalation cases - FIXED: handle None values
-    escalation_cases = []
-    for r in successful:
-        reply_analysis = r.get('_raw_reply_analysis', {})
-        if reply_analysis.get('escalation_case'):
-            escalation_cases.append(r)
-    
-    # Gabungkan first-as-final ke customer leave - FIXED: handle None values
-    first_as_final_cases = []
-    for r in successful:
-        if r.get('customer_leave'):
-            reply_analysis = r.get('_raw_reply_analysis', {})
-            first_reply = reply_analysis.get('first_reply')
-            if first_reply and first_reply.get('reply_type') == 'first_escalation':
-                first_as_final_cases.append(r)
-    
-    # SUMMARY CARDS
-    st.markdown("### 📊 Summary Overview")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Customer Leave Cases", len(customer_leave_cases))
-    
-    with col2:
-        st.metric("Escalation Cases", len(escalation_cases))
-    
-    with col3:
-        total_special = len(customer_leave_cases) + len(escalation_cases)
-        st.metric("Total Special Cases", total_special)
-    
-    # CUSTOMER LEAVE CASES
-    st.markdown("---")
-    st.markdown("### 🚶 Customer Leave Cases")
-    
-    if customer_leave_cases:
-        st.info(f"**{len(customer_leave_cases)} conversations** where customer left without complete resolution")
+        df_complaints = pd.DataFrame(complaint_data)
+        st.dataframe(df_complaints, use_container_width=True)
         
-        with st.expander("View Customer Leave Details", expanded=True):
-            leave_data = []
-            for result in customer_leave_cases:
-                # Cari reply yang digunakan - FIXED: handle None values
-                final_reply_msg = "No proper reply"
-                if result.get('final_reply_message'):
-                    final_reply_msg = result['final_reply_message'][:80] + '...'
-                elif result.get('first_reply_message'):
-                    final_reply_msg = f"Used first reply: {result['first_reply_message'][:80]}..."
-                
-                leave_data.append({
-                    'Ticket ID': result['ticket_id'],
-                    'Issue Type': result['final_issue_type'].upper(),
-                    'Main Question': result['main_question'][:60] + '...',
-                    'Reply Used': final_reply_msg,
-                    'Performance': result['performance_rating'].upper(),
-                    'Quality': result['quality_score']
-                })
-            
-            df_leave = pd.DataFrame(leave_data)
-            st.dataframe(df_leave, use_container_width=True)
+        # Complaint insights
+        st.markdown("### 💡 Complaint Insights")
         
-        # Analysis
-        st.markdown("#### 📈 Customer Leave Analysis")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            avg_quality = np.mean([r['quality_score'] for r in customer_leave_cases])
-            st.metric("Avg Quality Score", f"{avg_quality:.1f}/6")
+            first_reply_rate = sum(1 for r in complaint_cases if r['first_reply_found']) / len(complaint_cases) * 100
+            st.metric("First Reply Rate", f"{first_reply_rate:.1f}%")
         
         with col2:
-            issue_counts = pd.Series([r['final_issue_type'] for r in customer_leave_cases]).value_counts()
-            most_common = issue_counts.index[0] if not issue_counts.empty else "N/A"
-            st.metric("Most Common Issue", most_common.upper())
+            avg_resolution_days = np.mean([r.get('final_lead_time_days', 0) for r in complaint_cases if r.get('final_lead_time_days')])
+            st.metric("Avg Resolution Time", f"{avg_resolution_days:.1f} days")
         
         with col3:
-            rate = (len(customer_leave_cases) / len(successful)) * 100
-            st.metric("Leave Rate", f"{rate:.1f}%")
-            
+            requirement_met = sum(1 for r in complaint_cases if r['requirement_compliant'])
+            st.metric("Requirements Met", f"{requirement_met}/{len(complaint_cases)}")
+        
     else:
-        st.success("✅ No customer leave cases detected")
-    
-    # ESCALATION CASES
-    st.markdown("---")
-    st.markdown("### 🔄 Escalation Cases")
-    
-    if escalation_cases:
-        st.info(f"**{len(escalation_cases)} serious issues** requiring follow-up/escalation")
-        
-        with st.expander("View Escalation Details", expanded=True):
-            escalation_data = []
-            for result in escalation_cases:
-                # FIXED: handle None values untuk first_reply_message
-                first_reply_msg = result.get('first_reply_message', 'No first reply')
-                if first_reply_msg and len(first_reply_msg) > 100:
-                    first_reply_msg = first_reply_msg[:100] + '...'
-                
-                final_reply_msg = result.get('final_reply_message', 'No final reply')
-                if final_reply_msg and len(final_reply_msg) > 80:
-                    final_reply_msg = final_reply_msg[:80] + '...'
-                
-                escalation_data.append({
-                    'Ticket ID': result['ticket_id'],
-                    'Issue Type': result['final_issue_type'].upper(),
-                    'Main Question': result['main_question'][:60] + '...',
-                    'First Reply (Escalation)': first_reply_msg,
-                    'Final Reply': final_reply_msg,
-                    'Performance': result['performance_rating'].upper()
-                })
-            
-            df_escalation = pd.DataFrame(escalation_data)
-            st.dataframe(df_escalation, use_container_width=True)
-        
-        # Analysis
-        st.markdown("#### 📊 Escalation Analysis")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            issue_counts = pd.Series([r['final_issue_type'] for r in escalation_cases]).value_counts()
-            if not issue_counts.empty:
-                st.write("**Issue Types:**")
-                for issue_type, count in issue_counts.items():
-                    st.write(f"- {issue_type.upper()}: {count} cases")
-        
-        with col2:
-            perf_counts = pd.Series([r['performance_rating'] for r in escalation_cases]).value_counts()
-            if not perf_counts.empty:
-                st.write("**Performance:**")
-                for perf, count in perf_counts.items():
-                    st.write(f"- {perf.upper()}: {count} cases")
-    
-    else:
-        st.success("✅ No escalation cases detected")
-    
-    # FIRST AS FINAL CASES (jika ada)
-    if first_as_final_cases:
-        st.markdown("---")
-        st.markdown("### 🔀 First as Final Cases (Escalation + Customer Leave)")
-        
-        st.warning(f"**{len(first_as_final_cases)} cases** where escalation reply was used as final reply due to customer leave")
-        
-        with st.expander("View First-as-Final Details"):
-            first_final_data = []
-            for result in first_as_final_cases:
-                first_reply_msg = result.get('first_reply_message', 'No first reply')
-                if first_reply_msg and len(first_reply_msg) > 80:
-                    first_reply_msg = first_reply_msg[:80] + '...'
-                
-                first_final_data.append({
-                    'Ticket ID': result['ticket_id'],
-                    'Issue Type': result['final_issue_type'].upper(),
-                    'Main Question': result['main_question'][:60] + '...',
-                    'Escalation Reply Used': first_reply_msg,
-                    'Performance': result['performance_rating'].upper(),
-                    'Quality': result['quality_score']
-                })
-            
-            df_first_final = pd.DataFrame(first_final_data)
-            st.dataframe(df_first_final, use_container_width=True)
-    
-    # COMPREHENSIVE INSIGHTS
-    if customer_leave_cases or escalation_cases:
-        st.markdown("---")
-        st.markdown("### 💡 Insights & Recommendations")
-        
-        # Customer Leave Insights
-        if customer_leave_cases:
-            leave_rate = (len(customer_leave_cases) / len(successful)) * 100
-            with st.expander(f"🚶 Customer Leave Insights ({leave_rate:.1f}% rate)"):
-                st.write(f"**Issue:** {len(customer_leave_cases)} customers left conversations without complete resolution")
-                st.write("**Impact:** Potential lost opportunities and customer dissatisfaction")
-                st.write("**Recommendations:**")
-                st.write("- Implement proactive engagement strategies")
-                st.write("- Reduce response times for critical issues")
-                st.write("- Follow up with customers who left abruptly")
-                
-                # Show sample
-                sample_tickets = [r['ticket_id'] for r in customer_leave_cases[:3]]
-                st.write(f"**Sample Tickets:** {', '.join(sample_tickets)}")
-        
-        # Escalation Insights
-        if escalation_cases:
-            escalation_rate = (len(escalation_cases) / len(successful)) * 100
-            with st.expander(f"🔄 Escalation Insights ({escalation_rate:.1f}% rate)"):
-                st.write(f"**Issue:** {len(escalation_cases)} serious issues required escalation")
-                st.write("**Impact:** Longer resolution times, specialized handling needed")
-                st.write("**Recommendations:**")
-                st.write("- Empower agents with better knowledge base")
-                st.write("- Create escalation protocols for common serious issues")
-                st.write("- Track escalation resolution times")
-                
-                # Show sample
-                sample_tickets = [r['ticket_id'] for r in escalation_cases[:3]]
-                st.write(f"**Sample Tickets:** {', '.join(sample_tickets)}")
-        
-        # First-as-Final Insights
-        if first_as_final_cases:
-            first_final_rate = (len(first_as_final_cases) / len(successful)) * 100
-            with st.expander(f"🔀 First-as-Final Insights ({first_final_rate:.1f}% rate)"):
-                st.write(f"**Issue:** {len(first_as_final_cases)} escalation cases were not followed up due to customer leave")
-                st.write("**Impact:** Escalated issues left unresolved, potential service gaps")
-                st.write("**Recommendations:**")
-                st.write("- Implement mandatory follow-up procedures for escalated cases")
-                st.write("- Set up alerts for unresolved escalation cases")
-                st.write("- Proactively contact customers who left during escalation")
-                
-                # Show sample
-                sample_tickets = [r['ticket_id'] for r in first_as_final_cases[:3]]
-                st.write(f"**Sample Tickets:** {', '.join(sample_tickets)}")
-    
-    else:
-        st.success("🎉 Excellent! No special handling required for these conversations.")
-                
+        st.info("No complaint cases found. Make sure phone numbers in conversation data match complaint data.")
+
 def display_raw_data_tab(results):
-    """Display raw data tab untuk melihat semua hasil parse"""
-    st.markdown("## 📋 All Parsed Data")
+    """Display raw data"""
+    st.markdown("## 📋 All Analyzed Data")
     
     successful = [r for r in results if r['status'] == 'success']
     
     if successful:
-        st.info(f"Showing {len(successful)} successful analyses. Download the Excel report for complete data including all Q-A pairs.")
+        st.info(f"Showing {len(successful)} successful analyses with new requirement logic.")
         
         # Tampilkan data lengkap
         raw_data = []
@@ -1330,112 +800,31 @@ def display_raw_data_tab(results):
             special_notes = []
             if result.get('customer_leave'):
                 special_notes.append("Customer Leave")
-            if result.get('follow_up_ticket'):
-                special_notes.append("Follow-up")
+            if result.get('is_complaint'):
+                special_notes.append("Complaint")
             
             raw_data.append({
                 'Ticket ID': result['ticket_id'],
                 'Main Question': result['main_question'],
-                'Main Question Time': result.get('main_question_time'),
                 'Issue Type': result['final_issue_type'],
                 'First Reply Found': result['first_reply_found'],
                 'First Reply Message': result.get('first_reply_message', '')[:100] + '...' if result.get('first_reply_message') else 'Not found',
-                'First Reply Time': result.get('first_reply_time'),
                 'First Reply LT (min)': result.get('first_reply_lead_time_minutes'),
                 'Final Reply Found': result['final_reply_found'],
                 'Final Reply Message': result.get('final_reply_message', '')[:100] + '...' if result.get('final_reply_message') else 'Not found',
-                'Final Reply Time': result.get('final_reply_time'),
                 'Final Reply LT (min)': result.get('final_reply_lead_time_minutes'),
+                'Final Reply LT (Days)': result.get('final_lead_time_days'),
                 'Performance': result['performance_rating'],
                 'Quality Score': result['quality_score'],
-                'Special Notes': ', '.join(special_notes) if special_notes else 'None',
-                'Total Messages': result['total_messages'],
-                'Total QA Pairs': result['total_qa_pairs']
+                'Requirement Compliant': result['requirement_compliant'],
+                'Special Notes': ', '.join(special_notes) if special_notes else 'None'
             })
         
         df_raw = pd.DataFrame(raw_data)
         st.dataframe(df_raw, use_container_width=True)
         
-        # Data summary
-        st.markdown("### 📊 Data Summary")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Tickets", len(successful))
-        with col2:
-            avg_quality = np.mean([r['quality_score'] for r in successful])
-            st.metric("Avg Quality Score", f"{avg_quality:.1f}")
-        with col3:
-            first_reply_rate = sum(1 for r in successful if r['first_reply_found']) / len(successful) * 100
-            st.metric("First Reply Rate", f"{first_reply_rate:.1f}%")
-        with col4:
-            final_reply_rate = sum(1 for r in successful if r['final_reply_found']) / len(successful) * 100
-            st.metric("Final Reply Rate", f"{final_reply_rate:.1f}%")
-        
     else:
         st.info("No successful analyses to display")
-
-def display_debug_tab(results, stats):
-    """Display debug information"""
-    st.markdown("## 🐛 Debug Information")
-    
-    successful = [r for r in results if r['status'] == 'success']
-    failed = [r for r in results if r['status'] == 'failed']
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### 📊 Analysis Status")
-        st.metric("Successful Analyses", len(successful))
-        st.metric("Failed Analyses", len(failed))
-        st.metric("Success Rate", f"{(len(successful)/len(results))*100:.1f}%" if results else "0%")
-    
-    with col2:
-        st.markdown("### ⚠️ Common Issues")
-        
-        # Check for negative lead times
-        negative_lead_times = []
-        for result in successful:
-            first_lt = result.get('first_reply_lead_time_minutes')
-            final_lt = result.get('final_reply_lead_time_minutes')
-            
-            if (first_lt is not None and first_lt < 0) or (final_lt is not None and final_lt < 0):
-                negative_lead_times.append(result['ticket_id'])
-        
-        if negative_lead_times:
-            st.error(f"❌ {len(negative_lead_times)} tickets with negative lead times")
-        else:
-            st.success("✅ No negative lead times detected")
-        
-        # Check for missing required replies
-        missing_required = []
-        for result in successful:
-            issue_type = result['final_issue_type']
-            if issue_type in ['serious', 'complaint'] and not result['first_reply_found']:
-                missing_required.append(result['ticket_id'])
-            elif issue_type == 'normal' and not result['final_reply_found'] and not result.get('customer_leave'):
-                missing_required.append(result['ticket_id'])
-        
-        if missing_required:
-            st.warning(f"⚠️ {len(missing_required)} tickets missing required replies")
-        else:
-            st.success("✅ All required replies present")
-    
-    # Show failed analyses
-    if failed:
-        st.markdown("### ❌ Failed Analyses")
-        for result in failed[:5]:
-            with st.expander(f"Failed: {result['ticket_id']}"):
-                st.write(f"Reason: {result['failure_reason']}")
-    
-    # System information
-    st.markdown("### 🔧 System Information")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Python Version", sys.version.split()[0])
-    with col2:
-        st.metric("Pandas Version", pd.__version__)
-    with col3:
-        st.metric("Analysis Time", f"{stats.get('analysis_duration_seconds', 0):.1f}s")
 
 # Main execution
 if __name__ == "__main__":
@@ -1443,10 +832,7 @@ if __name__ == "__main__":
         st.error("""
         ❌ Analysis modules not available!
         
-        Please ensure:
-        1. File `Chat_Analyzer_System.py` exists in the same directory
-        2. File tersebut berisi semua class: DataPreprocessor, CompleteAnalysisPipeline, etc.
-        3. Dependencies sudah terinstall
+        Please ensure `chat_analyzer.py` exists with all required classes.
         """)
         st.stop()
     
@@ -1455,15 +841,3 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
-
-
-
-
-
-
-
-
-
-
-
-
