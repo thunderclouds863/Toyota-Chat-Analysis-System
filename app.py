@@ -347,7 +347,7 @@ def display_enhanced_results():
     st.markdown('<h1 class="main-header">📊 Analysis Results</h1>', unsafe_allow_html=True)
     
     # Quick Stats dengan complaint info
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         st.markdown(f"""
@@ -376,34 +376,6 @@ def display_enhanced_results():
         st.markdown(f"""
         <div class="metric-card">
             <h3>Avg First Reply</h3>
-            <h1>{metric_value}</h1>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col4:
-        if 'lead_time_stats' in stats:
-            avg_lead_time = stats['lead_time_stats'].get('final_reply_avg_minutes', 0)
-            metric_value = f"{avg_lead_time:.1f} min"
-        else:
-            metric_value = "N/A"
-        
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>Avg Final Reply</h3>
-            <h1>{metric_value}</h1>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with col5:
-        if 'issue_type_distribution' in stats:
-            complaint_count = stats['issue_type_distribution'].get('complaint', 0)
-            metric_value = complaint_count
-        else:
-            metric_value = "N/A"
-        
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>Complaint Cases</h3>
             <h1>{metric_value}</h1>
         </div>
         """, unsafe_allow_html=True)
@@ -1673,6 +1645,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
