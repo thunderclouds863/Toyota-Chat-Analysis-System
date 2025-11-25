@@ -110,7 +110,7 @@ st.markdown("""
 
 def main_interface():
     """Main interface dengan upload dua file"""
-    st.markdown('<h1 class="main-header">🤖 Enhanced Live Chat Analysis</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">🤖 Live Chat Analysis</h1>', unsafe_allow_html=True)
     st.markdown("Upload both conversation data and complaint data for comprehensive analysis")
     
     # Initialize session state
@@ -184,8 +184,8 @@ def main_interface():
         
         # Analysis Button
         if uploaded_raw_file is not None and uploaded_complaint_file is not None:
-            if st.button("🚀 START ENHANCED ANALYSIS", type="primary", use_container_width=True):
-                with st.spinner("🔄 Starting enhanced analysis..."):
+            if st.button("🚀 START ANALYSIS", type="primary", use_container_width=True):
+                with st.spinner("🔄 Starting analysis..."):
                     results, stats, excel_path = run_enhanced_analysis(
                         uploaded_raw_file, uploaded_complaint_file, max_tickets
                     )
@@ -204,7 +204,7 @@ def main_interface():
         st.markdown("---")
         st.markdown("### 📖 How to Use")
         st.info("""
-        **Enhanced Analysis Features:**
+        **Analysis Features:**
         1. **New Role Handling**: Ticket Automation & Blank roles
         2. **Complaint Detection**: Matches phones between files
         3. **Smart Issue Typing**: 
@@ -221,13 +221,13 @@ def main_interface():
     # Main content area
     if uploaded_raw_file is not None and uploaded_complaint_file is not None:
         st.markdown("---")
-        st.markdown("## 🚀 Ready for Enhanced Analysis")
+        st.markdown("## 🚀 Ready for Analysis")
         
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            if st.button("🎯 Start Enhanced Analysis", type="primary", use_container_width=True):
-                with st.spinner("🔄 Starting enhanced analysis..."):
+            if st.button("🎯 Start Analysis", type="primary", use_container_width=True):
+                with st.spinner("🔄 Starting analysis..."):
                     results, stats, excel_path = run_enhanced_analysis(
                         uploaded_raw_file, uploaded_complaint_file, max_tickets
                     )
@@ -296,7 +296,7 @@ def run_enhanced_analysis(uploaded_raw_file, uploaded_complaint_file, max_ticket
         processed_df = preprocessor.clean_data(raw_df)
         
         # Step 3: Initialize Pipeline dengan Data yang Sudah Di-load
-        status_text.text("🔧 Initializing enhanced analysis pipeline...")
+        status_text.text("🔧 Initializing analysis pipeline...")
         progress_bar.progress(60)
         
         # PERBAIKAN: Simpan complaint file temporary dan initialize pipeline
@@ -305,7 +305,7 @@ def run_enhanced_analysis(uploaded_raw_file, uploaded_complaint_file, max_ticket
             pipeline = CompleteAnalysisPipeline(complaint_data_path=tmp_complaint.name)
         
         # Step 4: Run Analysis - PERBAIKAN: Pass processed_df yang sudah benar
-        status_text.text("🔍 Analyzing conversations with enhanced logic...")
+        status_text.text("🔍 Analyzing conversations with logic...")
         progress_bar.progress(80)
         
         results, stats = pipeline.analyze_all_tickets(processed_df, max_tickets=max_tickets)
@@ -325,12 +325,12 @@ def run_enhanced_analysis(uploaded_raw_file, uploaded_complaint_file, max_ticket
         excel_path = exporter.export_comprehensive_results(results, stats)
         
         progress_bar.progress(100)
-        status_text.text("✅ Enhanced analysis complete!")
+        status_text.text("✅ analysis complete!")
         
         return results, stats, excel_path
         
     except Exception as e:
-        st.error(f"❌ Enhanced analysis error: {str(e)}")
+        st.error(f"❌ analysis error: {str(e)}")
         st.error(f"Detailed error: {traceback.format_exc()}")
         return None, None, None
 
@@ -344,7 +344,7 @@ def display_enhanced_results():
         return
     
     st.markdown("---")
-    st.markdown('<h1 class="main-header">📊 Enhanced Analysis Results</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">📊 Analysis Results</h1>', unsafe_allow_html=True)
     
     # Quick Stats dengan complaint info
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -440,21 +440,21 @@ def display_enhanced_results():
 
     # DOWNLOAD SECTION
     st.markdown("---")
-    st.markdown("## 💾 Download Enhanced Analysis Report")
+    st.markdown("## 💾 Download Analysis Report")
     
     if st.session_state.get('excel_file_path') and os.path.exists(st.session_state.excel_file_path):
         with open(st.session_state.excel_file_path, "rb") as f:
             excel_data = f.read()
         
         st.download_button(
-            label="📥 DOWNLOAD ENHANCED EXCEL REPORT",
+            label="📥 DOWNLOAD EXCEL REPORT",
             data=excel_data,
             file_name=f"enhanced_chat_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary",
             use_container_width=True
         )
-        st.success("✅ Enhanced report contains: Complaint matching, new issue typing, lead times in days/hours")
+        st.success("✅ Report contains: Complaint matching, new issue typing, lead times in days/hours")
     else:
         st.error("❌ Excel file not available for download")
 
@@ -496,7 +496,7 @@ def display_enhanced_results():
 
 def display_enhanced_overview_tab(results, stats):
     """Display enhanced overview tab"""
-    st.markdown("## 📈 Enhanced Analysis Overview")
+    st.markdown("## 📈 Analysis Overview")
     
     col1, col2 = st.columns(2)
     
@@ -547,7 +547,7 @@ def display_enhanced_overview_tab(results, stats):
             st.info("No performance distribution data available")
     
     # Enhanced Summary Statistics
-    st.markdown("### 📊 Enhanced Summary Statistics")
+    st.markdown("### 📊 Summary Statistics")
     
     # Lead Time Summary
     if 'lead_time_stats' in stats:
@@ -863,7 +863,7 @@ def _format_lead_time(result):
 
 def display_enhanced_special_cases_tab(results, stats):
     """Display enhanced special cases analysis"""
-    st.markdown("## 🚨 Enhanced Special Cases Analysis")
+    st.markdown("## 🚨 Special Cases Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
     
@@ -954,7 +954,7 @@ def display_enhanced_special_cases_tab(results, stats):
 
 def display_enhanced_lead_time_tab(results, stats):
     """Display enhanced lead time analysis"""
-    st.markdown("## ⏱️ Enhanced Lead Time Analysis")
+    st.markdown("## ⏱️ Lead Time Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
     
@@ -1261,7 +1261,7 @@ def display_performance_tab(results, stats):
 
 def display_enhanced_special_cases_tab(results, stats):
     """Display enhanced special cases analysis"""
-    st.markdown("## 🚨 Enhanced Special Cases Analysis")
+    st.markdown("## 🚨 Special Cases Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
     
@@ -1517,7 +1517,7 @@ def display_enhanced_special_cases_tab(results, stats):
     # COMPREHENSIVE INSIGHTS
     if customer_leave_cases or complaint_cases or serious_cases:
         st.markdown("---")
-        st.markdown("### 💡 Enhanced Insights & Recommendations")
+        st.markdown("### 💡 Insights & Recommendations")
         
         # Customer Leave Insights
         if customer_leave_cases:
@@ -1673,6 +1673,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
