@@ -963,7 +963,7 @@ def display_enhanced_lead_time_tab(results, stats):
         lt_stats = stats['lead_time_stats']
         st.markdown("### 📊 Overall Lead Time Summary")
         
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2 = st.columns(2)
         with col1:
             st.metric("First Reply Average", f"{lt_stats['first_reply_avg_minutes']:.1f} min")
         with col2:
@@ -972,10 +972,6 @@ def display_enhanced_lead_time_tab(results, stats):
                 st.metric("Final Reply Average", f"{lt_stats['final_reply_avg_minutes']:.1f} min")
             else:
                 st.metric("Final Reply Average", "Mixed (min/days)")
-        with col3:
-            st.metric("First Reply Samples", lt_stats['first_reply_samples'])
-        with col4:
-            st.metric("Final Reply Samples", lt_stats['final_reply_samples'])
     
     # Lead Time by Issue Type - PERBAIKAN DENGAN VALIDASI KETAT
     st.markdown("### 📈 Lead Time by Issue Type")
@@ -1677,6 +1673,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
