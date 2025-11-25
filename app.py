@@ -803,7 +803,45 @@ def display_enhanced_ticket_details(result):
         if '_raw_reply_analysis' in result:
             with st.expander("Reply Analysis Details"):
                 reply_analysis = result['_raw_reply_analysis']
-                st.json(reply_analysis)
+                
+                # PERBAIKAN: Tampilkan dalam format yang lebih readable
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Basic Info**")
+                    st.write(f"**Issue Type:** {reply_analysis.get('issue_type', 'N/A')}")
+                    st.write(f"**Customer Leave:** {reply_analysis.get('customer_leave', False)}")
+                    st.write(f"**Requirement Compliant:** {reply_analysis.get('requirement_compliant', False)}")
+                
+                with col2:
+                    st.markdown("**Reply Status**")
+                    st.write(f"**First Reply Found:** {reply_analysis.get('first_reply') is not None}")
+                    st.write(f"**Final Reply Found:** {reply_analysis.get('final_reply') is not None}")
+                
+                # First Reply Details
+                if reply_analysis.get('first_reply'):
+                    st.markdown("**First Reply Details**")
+                    first_reply = reply_analysis['first_reply']
+                    st.write(f"Message: {first_reply.get('message', '')[:200]}...")
+                    st.write(f"Lead Time: {first_reply.get('lead_time_minutes', 'N/A')} min")
+                    st.write(f"Note: {first_reply.get('note', 'N/A')}")
+                
+                # Final Reply Details
+                if reply_analysis.get('final_reply'):
+                    st.markdown("**Final Reply Details**")
+                    final_reply = reply_analysis['final_reply']
+                    st.write(f"Message: {final_reply.get('message', '')[:200]}...")
+                    
+                    if final_reply.get('lead_time_days'):
+                        st.write(f"Lead Time: {final_reply.get('lead_time_days')} days")
+                    else:
+                        st.write(f"Lead Time: {final_reply.get('lead_time_minutes', 'N/A')} min")
+                    
+                    st.write(f"Note: {final_reply.get('note', 'N/A')}")
+                
+                # Tampilkan JSON mentah hanya jika diminta
+                if st.checkbox("Show Raw JSON"):
+                    st.json(reply_analysis)
                 
 def _format_lead_time(result):
     """Format lead time berdasarkan jenis issue - PERBAIKAN: function biasa"""
@@ -1639,6 +1677,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
