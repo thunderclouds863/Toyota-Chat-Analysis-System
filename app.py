@@ -1166,27 +1166,46 @@ def display_enhanced_special_cases_tab(results, stats):
         
         with st.expander("View Complaint Details", expanded=True):
             complaint_data = []
+            complaint_lead_times_days = []  # PERBAIKAN: Kumpulkan data lead time
+            
             for result in complaint_cases:
                 lead_time_days = result.get('final_reply_lead_time_days', 'N/A')
+                
+                # Validasi lead time
+                if lead_time_days not in [None, 'N/A']:
+                    try:
+                        lt_days = float(lead_time_days)
+                        complaint_lead_times_days.append(lt_days)
+                        display_lt = f"{lt_days} days"
+                    except (ValueError, TypeError):
+                        display_lt = 'N/A'
+                else:
+                    display_lt = 'N/A'
                 
                 complaint_data.append({
                     'Ticket ID': result['ticket_id'],
                     'Main Question': result['main_question'][:60] + '...',
                     'First Reply Status': '✅ Found' if result['first_reply_found'] else '❌ Missing',
-                    'Final Resolution Time': f"{lead_time_days} days",
+                    'Final Resolution Time': display_lt,
                     'Performance': result['performance_rating'].upper()
                 })
             
             df_complaint = pd.DataFrame(complaint_data)
             st.dataframe(df_complaint, use_container_width=True)
         
-        # Complaint analysis
+        # Complaint analysis - PERBAIKAN: dengan validasi
         st.markdown("#### 📈 Complaint Analysis")
         col1, col2 = st.columns(2)
         
         with col1:
-            avg_lead_time = np.mean([r.get('final_reply_lead_time_days', 0) for r in complaint_cases if r.get('final_reply_lead_time_days')])
-            st.metric("Avg Resolution Time", f"{avg_lead_time:.1f} days")
+            if complaint_lead_times_days:
+                try:
+                    avg_lead_time = np.mean(complaint_lead_times_days)
+                    st.metric("Avg Resolution Time", f"{avg_lead_time:.1f} days")
+                except:
+                    st.metric("Avg Resolution Time", "N/A")
+            else:
+                st.metric("Avg Resolution Time", "N/A")
         
         with col2:
             first_reply_rate = sum(1 for r in complaint_cases if r['first_reply_found']) / len(complaint_cases) * 100
@@ -1204,21 +1223,42 @@ def display_enhanced_special_cases_tab(results, stats):
         
         with st.expander("View Serious Cases Details", expanded=True):
             serious_data = []
+            serious_lead_times_days = []  # PERBAIKAN: Konversi minutes ke days
+            
             for result in serious_cases:
+                # Konversi final reply lead time dari minutes ke days
+                final_lt_min = result.get('final_reply_lead_time_minutes')
+                final_lt_days = None
+                
+                if final_lt_min not in [None, 'N/A']:
+                    try:
+                        final_lt_min_float = float(final_lt_min)
+                        final_lt_days = final_lt_min_float / (24 * 60)  # Convert minutes to days
+                        serious_lead_times_days.append(final_lt_days)
+                        display_final_lt = f"{final_lt_days:.2f} days"
+                    except (ValueError, TypeError):
+                        display_final_lt = 'N/A'
+                else:
+                    display_final_lt = 'N/A'
+                
+                # First reply lead time (tetap dalam minutes untuk display)
+                first_lt_min = result.get('first_reply_lead_time_minutes', 'N/A')
+                display_first_lt = f"{first_lt_min} min" if first_lt_min not in [None, 'N/A'] else 'N/A'
+                
                 serious_data.append({
                     'Ticket ID': result['ticket_id'],
                     'Main Question': result['main_question'][:60] + '...',
                     'First Reply Status': '✅ Found' if result['first_reply_found'] else '❌ Missing',
                     'Final Reply Status': '✅ Found' if result['final_reply_found'] else '❌ Missing',
-                    'First Reply LT (min)': result.get('first_reply_lead_time_minutes', 'N/A'),
-                    'Final Reply LT (min)': result.get('final_reply_lead_time_minutes', 'N/A'),
+                    'First Reply LT': display_first_lt,
+                    'Final Reply LT': display_final_lt,
                     'Performance': result['performance_rating'].upper()
                 })
             
             df_serious = pd.DataFrame(serious_data)
             st.dataframe(df_serious, use_container_width=True)
         
-        # Serious cases analysis
+        # Serious cases analysis - PERBAIKAN: dengan data yang sudah dikonversi
         st.markdown("#### 📊 Serious Cases Analysis")
         col1, col2, col3 = st.columns(3)
         
@@ -1231,11 +1271,99 @@ def display_enhanced_special_cases_tab(results, stats):
             st.metric("Final Reply Rate", f"{final_reply_rate:.1f}%")
         
         with col3:
-            avg_first_lt = np.mean([r.get('first_reply_lead_time_minutes', 0) for r in serious_cases if r.get('first_reply_lead_time_minutes')])
-            st.metric("Avg First Reply LT", f"{avg_first_lt:.1f} min")
+            if serious_lead_times_days:
+                try:
+                    avg_final_lt_days = np.mean(serious_lead_times_days)
+                    st.metric("Avg Final Reply LT", f"{avg_final_lt_days:.2f} days")
+                except:
+                    st.metric("Avg Final Reply LT", "N/A")
+            else:
+                st.metric("Avg Final Reply LT", "N/A")
     
     else:
         st.success("✅ No serious cases detected")
+    
+    # OVERALL LEAD TIME SUMMARY (SEMUA ISSUE TYPES) - FITUR BARU
+    st.markdown("---")
+    st.markdown("### 📊 Overall Final Reply Lead Time Summary (All in Days)")
+    
+    # Kumpulkan semua final reply lead times dalam days
+    all_final_lead_times_days = []
+    
+    for result in successful:
+        if result['final_issue_type'] == 'complaint':
+            # Complaint: langsung ambil days
+            lt_days = result.get('final_reply_lead_time_days')
+            if lt_days not in [None, 'N/A']:
+                try:
+                    all_final_lead_times_days.append(float(lt_days))
+                except (ValueError, TypeError):
+                    pass
+        else:
+            # Normal & Serious: convert minutes to days
+            lt_min = result.get('final_reply_lead_time_minutes')
+            if lt_min not in [None, 'N/A']:
+                try:
+                    lt_min_float = float(lt_min)
+                    lt_days = lt_min_float / (24 * 60)  # Convert minutes to days
+                    all_final_lead_times_days.append(lt_days)
+                except (ValueError, TypeError):
+                    pass
+    
+    if all_final_lead_times_days:
+        st.markdown("#### 📈 Overall Statistics (Final Reply Lead Time)")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            try:
+                avg_days = np.mean(all_final_lead_times_days)
+                st.metric("Average", f"{avg_days:.2f} days")
+            except:
+                st.metric("Average", "N/A")
+        
+        with col2:
+            try:
+                median_days = np.median(all_final_lead_times_days)
+                st.metric("Median", f"{median_days:.2f} days")
+            except:
+                st.metric("Median", "N/A")
+        
+        with col3:
+            try:
+                min_days = np.min(all_final_lead_times_days)
+                st.metric("Minimum", f"{min_days:.2f} days")
+            except:
+                st.metric("Minimum", "N/A")
+        
+        with col4:
+            try:
+                max_days = np.max(all_final_lead_times_days)
+                st.metric("Maximum", f"{max_days:.2f} days")
+            except:
+                st.metric("Maximum", "N/A")
+        
+        # Distribution chart
+        st.markdown("#### 📊 Distribution of Final Reply Lead Times")
+        fig_all = px.histogram(
+            x=all_final_lead_times_days,
+            title='All Issues - Final Reply Lead Time Distribution (Days)',
+            labels={'x': 'Lead Time (days)', 'y': 'Frequency'},
+            nbins=20,
+            color_discrete_sequence=['#2E86AB']
+        )
+        try:
+            mean_all = np.mean(all_final_lead_times_days)
+            fig_all.add_vline(
+                x=mean_all, 
+                line_dash="dash", 
+                line_color="red",
+                annotation_text=f"Mean: {mean_all:.2f} days"
+            )
+        except:
+            pass
+        st.plotly_chart(fig_all, use_container_width=True)
+    else:
+        st.info("No final reply lead time data available for overall analysis")
     
     # COMPREHENSIVE INSIGHTS
     if customer_leave_cases or complaint_cases or serious_cases:
@@ -1269,12 +1397,11 @@ def display_enhanced_special_cases_tab(results, stats):
                 st.write("**Observation:** Tickets requiring reopening and additional handling")
                 st.write("**Process:**")
                 st.write("- First reply with action keywords")
-                st.write("- Ticket reopened for further handling")
+                st.write("- Ticket reopened for further handling") 
                 st.write("- Final resolution after reopening")
     
     else:
         st.success("🎉 Excellent! No special handling required for these conversations.")
-
 def display_raw_data_tab(results):
     """Display raw data tab"""
     st.markdown("## 📋 All Analyzed Data")
@@ -1327,6 +1454,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
