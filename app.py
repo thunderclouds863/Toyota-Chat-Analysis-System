@@ -370,11 +370,15 @@ def display_enhanced_results():
         """, unsafe_allow_html=True)
 
     with col3:
-        total_issues = sum(stats['issue_type_distribution'].values())
+        if 'reply_effectiveness' in stats:
+            final_reply_rate = stats['reply_effectiveness'].get('final_reply_found_rate', 0) * 100
+        else:
+            final_reply_rate = 0
+            
         st.markdown(f"""
         <div class="metric-card">
-            <h3>Successfully Analyzed Inquiries</h3>
-            <h1>{total_issues}</h1>
+            <h3>Final Reply Rate</h3>
+            <h1>{final_reply_rate:.1f}%</h1>
         </div>
         """, unsafe_allow_html=True)
 
@@ -400,8 +404,8 @@ def display_enhanced_results():
 
     # TABS - PROFESSIONAL LAYOUT
     st.markdown("---")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "📊 Overview", "🎯 Issue Types", "⏱️ Lead Times", "📈 Performance", "🚨 Special Cases", "🔍 All Data", "🐛 Debug"
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📊 Overview", "🎯 Issue Types", "⏱️ Lead Times", "📈 Performance", "🚨 Special Cases", "🔍 Raw Data"
     ])
     
     with tab1:
@@ -421,9 +425,6 @@ def display_enhanced_results():
     
     with tab6:
         display_raw_data_tab(results)
-
-    with tab7:
-        display_debug_tab(results, stats))
 
     # NEW ANALYSIS BUTTON
     st.markdown("---")
@@ -1437,5 +1438,3 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
-
-
