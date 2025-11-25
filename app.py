@@ -618,28 +618,6 @@ def display_enhanced_lead_time_tab(results, stats):
     
     successful = [r for r in results if r['status'] == 'success']
     
-    # Helper function untuk format lead time yang fleksibel
-    def format_lead_time(minutes):
-        """Format lead time berdasarkan durasi: minutes, hours, atau days"""
-        if minutes is None or minutes == 'N/A':
-            return "N/A"
-        
-        try:
-            minutes_float = float(minutes)
-            if minutes_float <= 0:
-                return "N/A"
-            
-            if minutes_float > 1440:  # > 1 day
-                days = minutes_float / 1440
-                return f"{days:.1f} days"
-            elif minutes_float > 60:  # > 1 hour
-                hours = minutes_float / 60
-                return f"{hours:.1f} hours"
-            else:
-                return f"{minutes_float:.1f} min"
-        except (ValueError, TypeError):
-            return "N/A"
-    
     # 1. SUMMARY TOTAL - Convert semua ke menit dulu
     st.markdown("### 📊 Overall Lead Time Summary")
     
@@ -1440,6 +1418,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
