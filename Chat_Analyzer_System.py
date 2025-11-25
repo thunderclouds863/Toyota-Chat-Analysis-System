@@ -1225,10 +1225,9 @@ class HybridClassifier:
             for feature, score in top_features:
                 print(f"   {feature}: {score:.3f}")
 
-# REPLY ANALYZER - COMPLETE FIXED VERSION DENGAN LOGIC BARU
 class ReplyAnalyzer:
     def __init__(self):
-        # first_reply_patterns:
+        # first_reply_patterns: (tetap sama)
         self.first_reply_patterns = [
             r'tangkapan', r'layar', r'cek', r'proses', r'kami\s+lihat', r'kami\s+periksa', 
             r'konfirmasi', r'validasi', r'follow\s+up', r'tindak\s+lanjut', r'eskalasi',
@@ -1239,34 +1238,160 @@ class ReplyAnalyzer:
             r'tunggu\s+sebentar', r'mohon\s+ditunggu', r'proses', r'cek\s+dulu'
         ]
 
-        # final_reply_patterns:
+        # final_reply_patterns: HANYA yang mengandung SOLUSI/INFORMASI
         self.final_reply_patterns = [
             r'solusi', r'jawaban', r'caranya', r'prosedur', r'bisa\s+menghubungi',
-            r'silakan\s+menghubungi', r'disarankan', r'disarankan\s+untuk', r'rekomendasi',
+            r'silakan\s+menghubungi', r'disarankan\s+untuk', r'rekomendasi',
             r'berikut\s+informasi', r'nomor\s+telepon', r'alamat\s+dealer', r'bengkel\s+resmi',
             r'call\s+center', r'hotline', r'customer\s+service', r'info\s+lengkap',
             r'cara\s+mengaktifkan', r'langkah-langkah', r'penjelasan\s+tentang', r'harga\s+mulai',
             r'biaya\s+required', r'tarif\s+berlaku', r'jam\s+operasional', r'alamat\s+lengkap',
             r'syarat\s+dan\s+ketentuan', r'spesifikasi', r'fungsi', r'bisa\s+dilakukan',
             r'dapat\s+dilakukan', r'silakan\s+datang', r'bawa\s+ke', r'perbaikan', r'servis',
-            r'ganti', r'penyebabnya', r'akibat', r'rekomendasi\s+kami', r'bisa\s+dicoba\s+kembali'
+            r'ganti', r'penyebabnya', r'akibat', r'rekomendasi\s+kami', r'bisa\s+dicoba\s+kembali',
+            r'cara\s+memperbaiki', r'langkah.*memperbaiki', r'penyelesaian', r'pemecahan'
         ]
         
-        # Conversation enders
+        # Conversation enders - TAMBAH LEBIH BANYAK PATTERN
         self.conversation_ender_patterns = [
-            r'apabila\s+sudah\s+cukup', r'terima\s+kasih', r'thanks', r'makasih', r'tks', r'sampai\s+jumpa', r'semoga\s+membantu',
-            r'apakah\s+sudah\s+jelas', r'apakah\s+cukup', r'apakah\s+membantu', r'goodbye', r'bye',
-            r'dadah', r'live\s+chat\s+ditutup', r'chat\s+saya\s+tutup', r'jika\s+sudah\s+cukup',
-            r'jika\s+tidak\s+ada\s+hal\s+lain', r'jika\s+ada\s+pertanyaan\s+lagi'
+            r'apabila\s+sudah\s+cukup', r'terima\s+kasih', r'thanks', r'makasih', r'tks', 
+            r'sampai\s+jumpa', r'semoga\s+membantu', r'apakah\s+sudah\s+jelas', 
+            r'apakah\s+cukup', r'apakah\s+membantu', r'goodbye', r'bye', r'dadah',
+            r'live\s+chat\s+ditutup', r'chat\s+saya\s+tutup', r'jika\s+sudah\s+cukup',
+            r'jika\s+tidak\s+ada\s+hal\s+lain', r'jika\s+ada\s+pertanyaan\s+lagi',
+            r'mengucapkan\s+terima\s+kasih', r'terimakasih', r'thank\s+you',
+            r'sampai\s+berjumpa\s+kembali', r'jumpa\s+lagi', r'selamat\s+(siang|sore|malam|pagi)',
+            r'have\s+a\s+nice\s+day', r'semoga\s+hari.*menyenangkan'
         ]
         
-        # Generic/bot replies
+        # Generic/bot replies (tetap sama)
         self.generic_reply_patterns = [
-            r'apabila\s+sudah\s+cukup', r'virtual\s+assistant', r'akan\s+segera\s+menghubungi', r'dalam\s+antrian',
-            r'terima\s+kasih,\s+saat\s+ini\s+anda\s+masuk', r'customer\s+service\s+akan',
-            r'menghubungi\s+anda', r'silakan\s+memilih\s+dari\s+menu', r'klik\s+setuju',
-            r'data\s+privasi', r'pilih\s+menu', r'silahkan\s+ketik\s+nama'
+            r'apabila\s+sudah\s+cukup', r'virtual\s+assistant', r'akan\s+segera\s+menghubungi', 
+            r'dalam\s+antrian', r'terima\s+kasih,\s+saat\s+ini\s+anda\s+masuk', 
+            r'customer\s+service\s+akan', r'menghubungi\s+anda', r'silakan\s+memilih\s+dari\s+menu', 
+            r'klik\s+setuju', r'data\s+privasi', r'pilih\s+menu', r'silahkan\s+ketik\s+nama'
         ]
+
+    def _find_final_reply_flexible(self, qa_pairs, issue_type, customer_leave=False, first_reply=None):
+        """Cari final reply dengan approach FLEXIBLE - VERSION FIXED"""
+        candidate_replies = []
+        
+        for pair in qa_pairs:
+            if pair['is_answered']:
+                answer = pair['answer']
+                
+                # Skip generic replies
+                if self._is_very_generic_reply(answer):
+                    continue
+                
+                # 🚨 FIX: Skip pure conversation enders (hanya berisi ucapan penutup)
+                if self._is_pure_conversation_ender(answer):
+                    print(f"   ⏩ Skip pure conversation ender: {answer[:50]}...")
+                    continue
+                
+                # Skip jika ini first reply yang sama
+                if first_reply and answer == first_reply.get('message'):
+                    continue
+                
+                # Score berdasarkan final reply patterns
+                score = 0
+                if self._matches_pattern(answer, self.final_reply_patterns):
+                    score += 3
+                
+                # Bonus untuk panjang content - HANYA jika mengandung solusi
+                word_count = len(answer.split())
+                if word_count > 15 and self._contains_solution_info(answer):
+                    score += 2
+                elif word_count > 8 and self._contains_solution_info(answer):
+                    score += 1
+                
+                # Bonus untuk informasi spesifik/solusi
+                if self._contains_solution_info(answer):
+                    score += 2
+                
+                # 🚨 FIX: PENALTI untuk yang hanya berisi ucapan penutup
+                if self._matches_pattern(answer, self.conversation_ender_patterns) and not self._contains_solution_info(answer):
+                    score -= 3
+                
+                if score >= 2:  # Threshold lebih rendah
+                    candidate_replies.append({
+                        'pair': pair,
+                        'score': score,
+                        'position': pair.get('position', 0),
+                        'word_count': word_count
+                    })
+                    print(f"   ✅ Candidate final reply (score {score}): {answer[:60]}...")
+        
+        if candidate_replies:
+            # Pilih yang score tertinggi, lalu yang paling akhir
+            best_candidate = max(candidate_replies, key=lambda x: (x['score'], x['position']))
+            reply_obj = self._create_reply_object(best_candidate['pair'], 'final_proper')
+            print(f"   ✅ Final reply selected (score {best_candidate['score']}): {best_candidate['pair']['answer'][:60]}...")
+            return reply_obj
+        
+        # Fallback: untuk normal issues, gunakan operator reply terakhir yang meaningful
+        if issue_type == 'normal' or customer_leave:
+            last_operator_reply = self._get_last_meaningful_operator_reply(qa_pairs)
+            if last_operator_reply:
+                reply_obj = self._create_reply_object(last_operator_reply, 'final_fallback')
+                note = "Customer left" if customer_leave else "Using last meaningful operator reply"
+                reply_obj['note'] = note
+                print(f"   🔄 Final reply ({note}): {last_operator_reply['answer'][:60]}...")
+                return reply_obj
+        
+        return None
+
+    def _is_pure_conversation_ender(self, message):
+        """Cek apakah message HANYA berisi ucapan penutup tanpa informasi solusi"""
+        message_lower = message.lower()
+        
+        # Jika hanya mengandung conversation ender patterns TANPA final reply patterns
+        has_ender = self._matches_pattern(message_lower, self.conversation_ender_patterns)
+        has_final = self._matches_pattern(message_lower, self.final_reply_patterns)
+        has_solution = self._contains_solution_info(message)
+        
+        # Pure ender = punya ender pattern TAPI tidak punya final/solution pattern
+        is_pure_ender = has_ender and not has_final and not has_solution
+        
+        # Contoh pure ender: "Terima kasih sudah menghubungi kami"
+        # Bukan pure ender: "Solusinya restart aplikasi. Terima kasih"
+        
+        return is_pure_ender
+
+    def _contains_solution_info(self, message):
+        """Cek apakah message mengandung informasi solusi yang substantif"""
+        message_lower = message.lower()
+        
+        solution_indicators = [
+            r'solusi', r'jawaban', r'caranya', r'prosedur', r'cara\s+memperbaiki',
+            r'langkah.*memperbaiki', r'penyelesaian', r'pemecahan', r'rekomendasi',
+            r'nomor\s+telepon', r'alamat', r'bengkel', r'dealer', r'call\s+center',
+            r'hotline', r'harga', r'biaya', r'tarif', r'jam\s+operasional',
+            r'spesifikasi', r'fungsi', r'cara\s+mengaktifkan', r'langkah-langkah'
+        ]
+        
+        return self._matches_pattern(message_lower, solution_indicators)
+
+    def _get_last_meaningful_operator_reply(self, qa_pairs):
+        """Ambil operator reply terakhir yang meaningful (BUKAN pure conversation ender)"""
+        operator_replies = []
+        
+        for pair in qa_pairs:
+            if pair['is_answered']:
+                answer = pair['answer']
+                role = pair.get('answer_role', '').lower()
+                
+                if any(keyword in role for keyword in ['operator', 'agent', 'admin', 'cs']):
+                    # Skip generic dan pure conversation enders
+                    if (not self._is_very_generic_reply(answer) and 
+                        not self._is_pure_conversation_ender(answer)):
+                        operator_replies.append(pair)
+        
+        if operator_replies:
+            # Return yang terakhir berdasarkan waktu
+            return sorted(operator_replies, key=lambda x: x.get('answer_time') or pd.Timestamp.min)[-1]
+        
+        return None
 
     def analyze_replies(self, qa_pairs, main_issue_type, customer_info=None, all_tickets_data=None):
         """Analyze replies dengan LOGIC BARU yang lebih FLEXIBLE"""
@@ -1344,65 +1469,6 @@ class ReplyAnalyzer:
             if pair['is_answered'] and not self._is_very_generic_reply(pair['answer']):
                 print(f"   🔄 First reply (fallback): {pair['answer'][:60]}...")
                 return self._create_reply_object(pair, 'first_fallback')
-        
-        return None
-
-    def _find_final_reply_flexible(self, qa_pairs, issue_type, customer_leave=False, first_reply=None):
-        """Cari final reply dengan approach FLEXIBLE"""
-        candidate_replies = []
-        
-        for pair in qa_pairs:
-            if pair['is_answered']:
-                answer = pair['answer']
-                
-                # Skip generic replies
-                if self._is_very_generic_reply(answer):
-                    continue
-                
-                # Skip jika ini first reply yang sama
-                if first_reply and answer == first_reply.get('message'):
-                    continue
-                
-                # Score berdasarkan final reply patterns
-                score = 0
-                if self._matches_pattern(answer, self.final_reply_patterns):
-                    score += 3
-                
-                # Bonus untuk panjang content
-                word_count = len(answer.split())
-                if word_count > 15:
-                    score += 2
-                elif word_count > 8:
-                    score += 1
-                
-                # Bonus untuk informasi spesifik/solusi
-                if self._matches_pattern(answer, [r'solusi', r'jawaban', r'caranya', r'nomor', r'alamat']):
-                    score += 2
-                
-                if score >= 2:  # Threshold lebih rendah
-                    candidate_replies.append({
-                        'pair': pair,
-                        'score': score,
-                        'position': pair.get('position', 0),
-                        'word_count': word_count
-                    })
-        
-        if candidate_replies:
-            # Pilih yang score tertinggi, lalu yang paling akhir
-            best_candidate = max(candidate_replies, key=lambda x: (x['score'], x['position']))
-            reply_obj = self._create_reply_object(best_candidate['pair'], 'final_proper')
-            print(f"   ✅ Final reply found: {best_candidate['pair']['answer'][:60]}...")
-            return reply_obj
-        
-        # 🔥 FIX 3: Untuk normal issues, gunakan operator reply terakhir yang meaningful
-        if issue_type == 'normal' or customer_leave:
-            last_operator_reply = self._get_last_operator_reply(qa_pairs)
-            if last_operator_reply:
-                reply_obj = self._create_reply_object(last_operator_reply, 'final_fallback')
-                note = "Customer left" if customer_leave else "Using last meaningful operator reply"
-                reply_obj['note'] = note
-                print(f"   🔄 Final reply ({note}): {last_operator_reply['answer'][:60]}...")
-                return reply_obj
         
         return None
 
@@ -3829,4 +3895,5 @@ if __name__ == "__main__":
     
     for ticket_id in problematic_tickets:
         debug_ticket_analysis(ticket_id, raw_df)
+
 
