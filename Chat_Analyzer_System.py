@@ -1266,7 +1266,7 @@ class ReplyAnalyzer:
         
         # Generic/bot replies (tetap sama)
         self.generic_reply_patterns = [
-            r'apabila\s+sudah\s+cukup', r'virtual\s+assistant', r'akan\s+segera\s+menghubungi', 
+            r'apa\s+?', r'apabila\s+sudah\s+cukup', r'virtual\s+assistant', r'akan\s+segera\s+menghubungi', 
             r'dalam\s+antrian', r'terima\s+kasih,\s+saat\s+ini\s+anda\s+masuk', 
             r'customer\s+service\s+akan', r'menghubungi\s+anda', r'silakan\s+memilih\s+dari\s+menu', 
             r'klik\s+setuju', r'data\s+privasi', r'pilih\s+menu', r'silahkan\s+ketik\s+nama'
@@ -3895,5 +3895,6 @@ if __name__ == "__main__":
     
     for ticket_id in problematic_tickets:
         debug_ticket_analysis(ticket_id, raw_df)
+
 
 
