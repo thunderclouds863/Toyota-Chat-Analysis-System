@@ -490,31 +490,12 @@ def display_enhanced_overview_tab(results, stats):
     if 'lead_time_stats' in stats:
         lt_stats = stats['lead_time_stats']
         st.markdown("#### ⏱️ Lead Time Summary")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2 = st.columns(2)
         
         with col1:
             st.metric("First Reply Avg", f"{lt_stats['first_reply_avg_minutes']:.1f} min")
         with col2:
             st.metric("Final Reply Avg", f"{lt_stats['final_reply_avg_minutes']:.1f} min")
-        with col3:
-            st.metric("First Reply Samples", lt_stats['first_reply_samples'])
-        with col4:
-            st.metric("Final Reply Samples", lt_stats['final_reply_samples'])
-    
-    # Issue Type Breakdown
-    if 'issue_type_distribution' in stats:
-        st.markdown("#### 🎯 Issue Type Breakdown")
-        issue_data = []
-        for issue_type, count in stats['issue_type_distribution'].items():
-            percentage = (count / stats['successful_analysis']) * 100
-            issue_data.append({
-                'Issue Type': issue_type.upper(),
-                'Count': count,
-                'Percentage': f"{percentage:.1f}%"
-            })
-        
-        df_issues = pd.DataFrame(issue_data)
-        st.dataframe(df_issues, use_container_width=True)
 
 def display_issue_types_tab(results, stats):
     """Display issue types analysis"""
@@ -1610,6 +1591,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
