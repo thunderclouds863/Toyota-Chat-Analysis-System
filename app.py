@@ -661,7 +661,147 @@ def display_issue_types_tab(results, stats):
                 display_enhanced_ticket_details(selected_result)
     else:
         st.info("No successful analyses to display")
-
+def display_enhanced_ticket_details(result):
+    """Display detailed information for a single ticket dengan enhanced info"""
+    
+    # Main Question
+    st.markdown("### 📝 Main Question")
+    st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
+    
+    # Issue Type dengan color coding
+    issue_type = result['final_issue_type']
+    issue_color = {
+        'normal': '#28a745',
+        'serious': '#dc3545', 
+        'complaint': '#ffc107'
+    }.get(issue_type, '#6c757d')
+    
+    st.markdown(f"""
+    <div style="background-color: {issue_color}; color: white; padding: 10px; border-radius: 5px; margin: 10px 0;">
+        <strong>Issue Type:</strong> {issue_type.upper()}
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Special Notes
+    special_notes = []
+    if result.get('customer_leave'):
+        special_notes.append("🚶 **Customer Leave**: Detected by Ticket Automation")
+    if result['final_issue_type'] == 'complaint':
+        special_notes.append("📋 **Complaint Case**: Matched from complaint system")
+    if result['final_issue_type'] == 'serious':
+        special_notes.append("⚠️ **Serious Case**: Ticket was reopened")
+    
+    if special_notes:
+        st.markdown("### 🚨 Special Conditions")
+        for note in special_notes:
+            st.markdown(f'<div class="special-case">{note}</div>', unsafe_allow_html=True)
+    
+    # First Reply Section
+    if result['final_issue_type'] in ['serious', 'complaint']:
+        st.markdown("#### 🔄 First Reply Analysis")
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            if result['first_reply_found']:
+                first_reply_msg = result.get('first_reply_message', 'No message content available')
+                st.markdown(f'<div class="message-box"><strong>First Reply:</strong> {first_reply_msg}</div>', unsafe_allow_html=True)
+            else:
+                st.error("❌ No first reply found - REQUIRED for serious/complaint issues")
+        
+        with col2:
+            if result['first_reply_found']:
+                st.metric("Lead Time", f"{result.get('first_reply_lead_time_minutes', 'N/A')} min")
+                st.metric("Time Format", result.get('first_reply_lead_time_hhmmss', 'N/A'))
+            else:
+                st.metric("Status", "Not Found")
+    
+    # Final Reply Section  
+    st.markdown("#### ✅ Final Reply Analysis")
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        if result['final_reply_found']:
+            final_reply_msg = result.get('final_reply_message', 'No message content available')
+            
+            if result['final_issue_type'] == 'complaint':
+                note = "From complaint system resolution"
+            elif result['final_issue_type'] == 'serious':
+                note = "After ticket reopened"
+            else:
+                note = "Direct solution provided"
+            
+            st.markdown(f'<div class="message-box"><strong>Final Reply ({note}):</strong> {final_reply_msg}</div>', unsafe_allow_html=True)
+        else:
+            st.error("❌ No final reply found")
+    
+    with col2:
+        if result['final_reply_found']:
+            if result['final_issue_type'] == 'complaint':
+                lead_time = result.get('final_reply_lead_time_days', 'N/A')
+                st.metric("Lead Time", f"{lead_time} days")
+            else:
+                st.metric("Lead Time", f"{result.get('final_reply_lead_time_minutes', 'N/A')} min")
+                st.metric("Time Format", result.get('final_reply_lead_time_hhmmss', 'N/A'))
+        else:
+            st.metric("Status", "Not Found")
+    
+    # Performance Metrics
+    st.markdown("#### 📊 Performance Metrics")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        performance_color = {
+            'excellent': '#28a745',
+            'good': '#007bff', 
+            'fair': '#ffc107',
+            'poor': '#dc3545'
+        }.get(result['performance_rating'], '#6c757d')
+        
+        st.markdown(f"""
+        <div style="background-color: {performance_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
+            <h3 style="margin: 0; font-size: 1.2rem;">Performance</h3>
+            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['performance_rating'].upper()}</h1>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        quality_color = "#28a745" if result['quality_score'] >= 4 else "#ffc107" if result['quality_score'] >= 2 else "#dc3545"
+        st.markdown(f"""
+        <div style="background-color: {quality_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
+            <h3 style="margin: 0; font-size: 1.2rem;">Quality Score</h3>
+            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['quality_score']}/6</h1>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.metric("Total Messages", result['total_messages'])
+    
+    with col4:
+        answer_rate = (result['answered_pairs'] / result['total_qa_pairs']) * 100 if result['total_qa_pairs'] > 0 else 0
+        st.metric("Answer Rate", f"{answer_rate:.1f}%")
+    
+    # Raw Data Access (if available)
+    if st.checkbox("Show Raw Analysis Data"):
+        st.markdown("#### 🔧 Raw Analysis Data")
+        
+        if '_raw_qa_pairs' in result:
+            with st.expander("Q-A Pairs Raw Data"):
+                qa_data = []
+                for i, pair in enumerate(result['_raw_qa_pairs']):
+                    qa_data.append({
+                        'Pair': i + 1,
+                        'Question': pair.get('question', '')[:100] + '...',
+                        'Answered': '✅' if pair.get('is_answered') else '❌',
+                        'Answer': pair.get('answer', '')[:100] + '...' if pair.get('answer') else 'No Answer',
+                        'Lead Time (min)': pair.get('lead_time_minutes', 'N/A')
+                    })
+                st.dataframe(pd.DataFrame(qa_data))
+        
+        if '_raw_reply_analysis' in result:
+            with st.expander("Reply Analysis Details"):
+                reply_analysis = result['_raw_reply_analysis']
+                st.json(reply_analysis)
+                
 def _format_lead_time(result):
     """Format lead time berdasarkan jenis issue - PERBAIKAN: function biasa"""
     if result['final_issue_type'] == 'complaint' and result.get('final_reply_lead_time_days'):
@@ -1426,6 +1566,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
