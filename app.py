@@ -527,29 +527,34 @@ def display_professional_overview_tab(results, stats):
     
     if 'lead_time_stats' in stats:
         lt_stats = stats['lead_time_stats']
+        st.markdown("#### ⏱️ Lead Time Summary")
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            first_avg = lt_stats.get('first_reply_lead_time_minutes', 0)
-            st.metric("first_avg")
+            first_avg = lt_stats.get('first_reply_avg_minutes', 0)
+            if first_avg > 1440:  # lebih dari 1 hari
+                display_first = f"{first_avg/1440:.1f} days"
+            elif first_avg > 60:  # lebih dari 1 jam
+                display_first = f"{first_avg/60:.1f} hours"
+            else:
+                display_first = f"{first_avg:.0f} min"
+            st.metric("First Reply Avg", display_first)
         
         with col2:
             final_avg = lt_stats.get('final_reply_avg_minutes', 0)
             if final_avg > 1440:  # lebih dari 1 hari
                 display_final = f"{final_avg/1440:.1f} days"
-            elif final_avg > 60:
+            elif final_avg > 60:  # lebih dari 1 jam
                 display_final = f"{final_avg/60:.1f} hours"
             else:
-                display_final = f"{final_avg:.0f} minutes"
-            st.metric("Final Resolution Time", display_final)
+                display_final = f"{final_avg:.0f} min"
+            st.metric("Final Reply Avg", display_final)
         
         with col3:
-            first_samples = lt_stats.get('first_reply_samples', 0)
-            st.metric("First Reply Samples", first_samples)
+            st.metric("First Reply Samples", lt_stats['first_reply_samples'])
         
         with col4:
-            final_samples = lt_stats.get('final_reply_samples', 0)
-            st.metric("Final Reply Samples", final_samples)
+            st.metric("Final Reply Samples", lt_stats['final_reply_samples'])
     
     # ROW 4: Reply Effectiveness
     st.markdown("### 💬 Reply Effectiveness")
@@ -1440,6 +1445,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
