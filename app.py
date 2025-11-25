@@ -15,7 +15,7 @@ import traceback
 # Import analysis modules
 sys.path.append('.')
 try:
-    from chat_analyzer import (
+    from Chat_Analyzer_System import (
         DataPreprocessor, CompleteAnalysisPipeline, 
         ComplaintMatcher, Config
     )
@@ -832,7 +832,7 @@ if __name__ == "__main__":
         st.error("""
         ❌ Analysis modules not available!
         
-        Please ensure `chat_analyzer.py` exists with all required classes.
+        Please ensure `Chat_Analyzer_System.py` exists with all required classes.
         """)
         st.stop()
     
@@ -841,3 +841,4 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
