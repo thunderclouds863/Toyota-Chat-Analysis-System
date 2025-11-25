@@ -1227,15 +1227,69 @@ class HybridClassifier:
 
 class ReplyAnalyzer:
     def __init__(self):
-        # ... [existing init code tetap sama] ...
+        # First reply patterns
+        self.first_reply_patterns = [
+            r'tangkapan', r'layar', r'cek', r'proses', r'kami\s+lihat', r'kami\s+periksa', 
+            r'konfirmasi', r'validasi', r'follow\s+up', r'tindak\s+lanjut', r'eskalasi',
+            r'kami\s+pelajari', r'kami\s+investigasi', r'kami\s+telusuri', r'disarankan',
+            r'jika\s+dilihat', r'dilihat\s+dari', r'berdasarkan.*layar', r'foto.*yang.*kirim',
+            r'screenshot.*yang', r'gambar.*yang.*kirim', r'dari.*foto', r'akan\s+kami',
+            r'pengecekan', r'verifikasi', r'kami\s+teruskan', r'kami\s+diskusikan',
+            r'tunggu\s+sebentar', r'mohon\s+ditunggu', r'proses', r'cek\s+dulu'
+        ]
+
+        # Final reply patterns
+        self.solution_patterns = [
+            r'solusi', r'jawaban', r'caranya', r'prosedur', r'bisa\s+menghubungi',
+            r'silakan\s+menghubungi', r'disarankan', r'disarankan\s+untuk', r'rekomendasi',
+            r'berikut\s+informasi', r'nomor\s+telepon', r'alamat\s+dealer', r'bengkel\s+resmi',
+            r'call\s+center', r'hotline', r'customer\s+service', r'info\s+lengkap',
+            r'cara\s+mengaktifkan', r'langkah-langkah', r'penjelasan\s+tentang', r'harga\s+mulai',
+            r'biaya\s+required', r'tarif\s+berlaku', r'jam\s+operasional', r'alamat\s+lengkap',
+            r'syarat\s+dan\s+ketentuan', r'spesifikasi', r'fungsi', r'bisa\s+dilakukan',
+            r'dapat\s+dilakukan', r'silakan\s+datang', r'bawa\s+ke', r'perbaikan', r'servis',
+            r'ganti', r'penyebabnya', r'akibat', r'rekomendasi\s+kami', r'bisa\s+dicoba\s+kembali'
+        ]
         
-        # Tambahkan pattern untuk skip
+        # Escalation patterns
+        self.escalation_patterns = [
+            r'akan\s+ditindaklanjuti', r'diteruskan\s+ke', r'akan\s+diteruskan', 
+            r'dilaporkan\s+ke', r'akan\s+dilaporkan', r'tunggu\s+informasi', 
+            r'follow\s+up', r'proses\s+lebih\s+lanjut', r'akan\s+kami\s+proses',
+            r'dibantu\s+teruskan', r'disampaikan\s+lebih\s+lanjut', r'pihak\s+terkait',
+            r'tim\s+terkait', r'area\s+terkait', r'akan\s+diperbaiki', r'akan\s+dicek'
+        ]
+        
+        # Conversation enders (TAMBAHAN: skip yang cuma nanya "apakah sudah jelas")
+        self.conversation_ender_patterns = [
+            r'terima\s+kasih', r'thanks', r'makasih', r'tks', r'sampai\s+jumpa', r'semoga\s+membantu',
+            r'goodbye', r'bye', r'dadah', r'live\s+chat\s+ditutup', r'chat\s+saya\s+tutup',
+            r'jika\s+tidak\s+ada\s+hal\s+lain', r'jika\s+ada\s+pertanyaan\s+lagi'
+        ]
+        
+        # SKIP patterns - reply yang harus di-skip karena tidak meaningful (TAMBAHAN BARU)
         self.skip_patterns = [
             r'apakah\s+informasinya\s+sudah\s+cukup\s+jelas',
-            r'apakah\s+sudah\s+cukup',
-            r'apakah\s+membantu',
+            r'apakah\s+sudah\s+cukup\s+jelas', 
+            r'apakah\s+jelas',
+            r'sudah\s+cukup\s+jelas',
+            r'cukup\s+jelas',
+            r'apakah\s+ada\s+hal\s+lain',
             r'ada\s+hal\s+lain',
-            r'bisa\s+dibantu'
+            r'apakah\s+ada\s+pertanyaan\s+lain',
+            r'ada\s+pertanyaan\s+lain',
+            r'apakah\s+bisa\s+dibantu',
+            r'bisa\s+dibantu\s+lagi',
+            r'mau\s+tanya\s+lagi',
+            r'ingin\s+tanya\s+lagi'
+        ]
+        
+        # Generic/bot replies
+        self.generic_reply_patterns = [
+            r'virtual\s+assistant', r'akan\s+segera\s+menghubungi', r'dalam\s+antrian',
+            r'terima\s+kasih,\s+saat\s+ini\s+anda\s+masuk', r'customer\s+service\s+akan',
+            r'menghubungi\s+anda', r'silakan\s+memilih\s+dari\s+menu', r'klik\s+setuju',
+            r'data\s+privasi', r'pilih\s+menu', r'silahkan\s+ketik\s+nama'
         ]
 
     def analyze_replies(self, qa_pairs, main_issue_type, customer_info=None, all_tickets_data=None):
@@ -3786,6 +3840,7 @@ def debug_ticket_analysis(ticket_id, df):
             print(f"   First Reply Found: {analysis['reply_validation']['first_reply_found']}")
             print(f"   Final Reply Found: {analysis['reply_validation']['final_reply_found']}")
             print(f"   Requirement Compliant: {analysis['requirement_compliant']}")
+
 
 
 
