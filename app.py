@@ -531,7 +531,7 @@ def display_professional_overview_tab(results, stats):
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            first_avg = lt_stats.get('first_reply_avg_minutes', 0)
+            first_avg = lt_stats.get('first_reply_lead_time_minutes', 0)
             if first_avg > 1440:  # lebih dari 1 hari
                 display_first = f"{first_avg/1440:.1f} days"
             elif first_avg > 60:  # lebih dari 1 jam
@@ -1445,6 +1445,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
