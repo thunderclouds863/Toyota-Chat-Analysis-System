@@ -1036,15 +1036,10 @@ def display_enhanced_special_cases_tab(results, stats):
     
     # Extract special cases
     customer_leave_cases = [r for r in successful if r.get('customer_leave')]
-    complaint_cases = [r for r in successful if r['final_issue_type'] == 'complaint']
-    serious_cases = [r for r in successful if r['final_issue_type'] == 'serious']
     
     # SUMMARY CARDS
     st.markdown("### 📊 Special Cases Summary")
-    col1 = st.columns(1)
-    
-    with col1:
-        st.metric("Customer Leave Cases", len(customer_leave_cases))
+    st.metric("Customer Leave Cases", len(customer_leave_cases))
     
     # CUSTOMER LEAVE CASES
     st.markdown("---")
@@ -1191,6 +1186,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
