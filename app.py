@@ -24,7 +24,7 @@ except ImportError as e:
     ANALYSIS_AVAILABLE = False
 
 st.set_page_config(
-    page_title="Live Chat Analysis Dashboard - NEW REQUIREMENTS",
+    page_title="Live Chat Analysis Dashboard",
     page_icon="🤖", 
     layout="wide",
     initial_sidebar_state="expanded"
@@ -90,7 +90,7 @@ st.markdown("""
 
 def main_interface():
     """Main interface dengan upload dua file"""
-    st.markdown('<h1 class="main-header">🤖 Live Chat Analysis - NEW REQUIREMENTS</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">🤖 Live Chat Analysis</h1>', unsafe_allow_html=True)
     st.markdown("Upload both conversation data and complaint data for complete analysis")
     
     # Initialize session state
@@ -255,7 +255,7 @@ def display_complete_results():
         return
     
     st.markdown("---")
-    st.markdown('<h1 class="main-header">📊 Analysis Results - NEW REQUIREMENTS</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">📊 Analysis Results</h1>', unsafe_allow_html=True)
     
     # Quick Stats
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -840,5 +840,6 @@ if __name__ == "__main__":
         display_complete_results()
     else:
         main_interface()
+
 
 
