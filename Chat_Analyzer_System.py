@@ -36,8 +36,8 @@ class Config:
     COMPLAINT_FINAL_REPLY_THRESHOLD = 7200  # 5 hari
     
     # Abandoned detection
-    ABANDONED_TIMEOUT_MINUTES = 3  # 3 menit tanpa response dari customer
-    CUSTOMER_LEAVE_TIMEOUT = 3  # 3 menit untuk detect customer leave
+    ABANDONED_TIMEOUT_MINUTES = 5  # 30 menit tanpa response dari customer
+    CUSTOMER_LEAVE_TIMEOUT = 5  # 30 menit untuk detect customer leave
     
     # Follow-up settings
     FOLLOWUP_SOURCES = {
@@ -226,7 +226,7 @@ class ConversationParser:
             'goodbye'
         ]
         
-        self.customer_leave_timeout = 3  # 3 menit
+        self.customer_leave_timeout = 30  # 30 menit
     
     def detect_conversation_start(self, ticket_df):
         """Deteksi kapan conversation benar-benar dimulai dengan operator"""
@@ -267,7 +267,7 @@ class ConversationParser:
                 last_question = meaningful_questions[-1]
                 time_gap = (row['parsed_timestamp'] - last_question['time']).total_seconds()
                 
-                if time_gap < 180:  # 3 menit
+                if time_gap < 1800:  # 30 menit
                     print(f"   ✅ Conversation start: first operator response at position {idx}")
                     return last_question['time']
         
@@ -317,13 +317,13 @@ class ConversationParser:
         if conversation_end_detected:
             return False
         
-        # 🔥 LOGIC BARU: Jika customer tidak response dalam 3 menit setelah operator message terakhir
+        # 🔥 LOGIC BARU: Jika customer tidak response dalam 30 menit setelah operator message terakhir
         if last_customer_time and last_operator_time:
             time_gap = (last_operator_time - last_customer_time).total_seconds() / 60
             
             # Customer leave jika: 
             # 1. Operator message terakhir SETELAH customer message terakhir
-            # 2. Gap waktu > 3 menit
+            # 2. Gap waktu > 30 menit
             # 3. Tidak ada conversation ender
             if last_operator_time > last_customer_time and time_gap >= self.customer_leave_timeout:
                 print(f"   🚶 Customer leave detected: {time_gap:.1f} min gap")
@@ -1434,13 +1434,13 @@ class ReplyAnalyzer:
                 # Answered question - operator reply
                 last_operator_time = pair.get('answer_time')
         
-        # Jika ada last operator time setelah last customer time, dan gap > 3 menit
+        # Jika ada last operator time setelah last customer time, dan gap > 30 menit
         if last_customer_time and last_operator_time:
             time_gap = (last_operator_time - last_customer_time).total_seconds() / 60
             
             # Customer leave jika operator message terakhir SETELAH customer message terakhir
-            # dan gap waktu > 3 menit
-            if last_operator_time > last_customer_time and time_gap >= 3:
+            # dan gap waktu > 30 menit
+            if last_operator_time > last_customer_time and time_gap >= 30:
                 print(f"   🚶 Customer leave detected: {time_gap:.1f} min gap")
                 return True
         
@@ -3924,5 +3924,4 @@ if __name__ == "__main__":
     
     for ticket_id in problematic_tickets:
         debug_ticket_analysis(ticket_id, raw_df)
-
 
