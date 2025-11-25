@@ -524,8 +524,11 @@ class ReplyAnalyzer:
         # Cari first reply (operator reply pertama setelah main question)
         first_reply = self._find_first_reply(ticket_df, main_issue['question_time'])
         
-        # PERBAIKAN: Untuk complaint, gunakan lead_time_days langsung, jangan convert ke minutes
-        final_reply_lead_time_days = complaint_data.get('lead_time_days')
+        first_reply_found = first_reply is not None
+        final_reply_found = True  # Untuk complaint, selalu dianggap ada final reply dari system
+        
+        # PERBAIKAN: Pass reply status ke customer leave check
+        customer_leave = self._check_customer_leave(ticket_df, first_reply_found, final_reply_found)
         
         analysis_result = {
             'issue_type': 'complaint',
@@ -533,11 +536,11 @@ class ReplyAnalyzer:
             'final_reply': {
                 'message': 'COMPLAINT_RESOLUTION',
                 'timestamp': None,
-                'lead_time_minutes': None,  # PERBAIKAN: Tidak perlu minutes untuk complaint
-                'lead_time_days': final_reply_lead_time_days,
+                'lead_time_minutes': None,
+                'lead_time_days': complaint_data.get('lead_time_days'),
                 'note': 'Final resolution from complaint system'
             },
-            'customer_leave': False,
+            'customer_leave': customer_leave,
             'requirement_compliant': first_reply is not None
         }
         
@@ -554,8 +557,11 @@ class ReplyAnalyzer:
         # Final reply: operator reply PERTAMA SETELAH ticket reopened
         final_reply = self._find_serious_final_reply(ticket_df, reopened_time)
         
-        # Cek customer leave
-        customer_leave = self._check_customer_leave(ticket_df)
+        first_reply_found = first_reply is not None
+        final_reply_found = final_reply is not None
+        
+        # PERBAIKAN: Pass reply status ke customer leave check
+        customer_leave = self._check_customer_leave(ticket_df, first_reply_found, final_reply_found)
         
         analysis_result = {
             'issue_type': 'serious',
@@ -572,8 +578,11 @@ class ReplyAnalyzer:
         # Cari operator reply yang mengandung solusi (langsung dianggap final reply)
         final_reply = self._find_normal_final_reply(ticket_df, main_issue['question_time'])
         
-        # Untuk normal, tidak ada first reply requirement
-        customer_leave = self._check_customer_leave(ticket_df)
+        first_reply_found = False  # Normal tidak butuh first reply
+        final_reply_found = final_reply is not None
+        
+        # PERBAIKAN: Pass reply status ke customer leave check
+        customer_leave = self._check_customer_leave(ticket_df, first_reply_found, final_reply_found)
         
         analysis_result = {
             'issue_type': 'normal',
@@ -717,18 +726,29 @@ class ReplyAnalyzer:
         ]
         return any(keyword in message_lower for keyword in solution_keywords)
     
-    def _check_customer_leave(self, ticket_df):
-        """Cek apakah customer leave conversation"""
+    def _check_customer_leave(self, ticket_df, first_reply_found, final_reply_found):
+        """Cek apakah customer leave conversation - LOGIC BARU"""
         # Cari keyword customer leave dari ticket automation
+        has_leave_keyword = False
         for _, row in ticket_df.iterrows():
             role = str(row['Role']).lower()
             message = str(row['Message'])
             
             if 'ticket automation' in role and config.CUSTOMER_LEAVE_KEYWORD in message:
-                print("   🚶 Customer leave detected")
-                return True
+                has_leave_keyword = True
+                break
         
-        return False
+        # PERBAIKAN: Hanya dianggap customer leave jika:
+        # 1. Ada keyword customer leave DAN
+        # 2. Tidak ada first reply ATAU tidak ada final reply
+        if has_leave_keyword and (not first_reply_found or not final_reply_found):
+            print("   🚶 Customer leave detected (no proper replies)")
+            return True
+        elif has_leave_keyword and first_reply_found and final_reply_found:
+            print("   ⚠️  Customer leave keyword found but replies exist - NOT counted as leave")
+            return False
+        else:
+            return False
     
     def _seconds_to_hhmmss(self, seconds):
         """Convert seconds to HH:MM:SS format"""
@@ -1098,6 +1118,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
