@@ -1254,7 +1254,7 @@ class ReplyAnalyzer:
         
         # Conversation enders - TAMBAH LEBIH BANYAK PATTERN
         self.conversation_ender_patterns = [
-            r'apabila\s+sudah\s+cukup', r'terima\s+kasih', r'thanks', r'makasih', r'tks', 
+            r'tipe\s+apa', r'apa\s+?',r'apabila\s+sudah\s+cukup', r'terima\s+kasih', r'thanks', r'makasih', r'tks', 
             r'sampai\s+jumpa', r'semoga\s+membantu', r'apakah\s+sudah\s+jelas', 
             r'apakah\s+cukup', r'apakah\s+membantu', r'goodbye', r'bye', r'dadah',
             r'live\s+chat\s+ditutup', r'chat\s+saya\s+tutup', r'jika\s+sudah\s+cukup',
@@ -1266,7 +1266,7 @@ class ReplyAnalyzer:
         
         # Generic/bot replies (tetap sama)
         self.generic_reply_patterns = [
-            r'apa\s+?', r'apabila\s+sudah\s+cukup', r'virtual\s+assistant', r'akan\s+segera\s+menghubungi', 
+            r'tipe\s+apa', r'apa\s+?', r'apabila\s+sudah\s+cukup', r'virtual\s+assistant', r'akan\s+segera\s+menghubungi', 
             r'dalam\s+antrian', r'terima\s+kasih,\s+saat\s+ini\s+anda\s+masuk', 
             r'customer\s+service\s+akan', r'menghubungi\s+anda', r'silakan\s+memilih\s+dari\s+menu', 
             r'klik\s+setuju', r'data\s+privasi', r'pilih\s+menu', r'silahkan\s+ketik\s+nama'
@@ -1577,6 +1577,9 @@ class ReplyAnalyzer:
         message_lower = str(message).lower()
         
         very_generic_patterns = [
+            r'apa\s+?',
+            r'apa',
+            r'tipe\s+apa',
             r'virtual\s+assistant',
             r'akan\s+segera\s+menghubungi', 
             r'dalam\s+antrian',
@@ -3895,6 +3898,7 @@ if __name__ == "__main__":
     
     for ticket_id in problematic_tickets:
         debug_ticket_analysis(ticket_id, raw_df)
+
 
 
 
