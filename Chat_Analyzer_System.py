@@ -36,12 +36,24 @@ class Config:
     SERIOUS_FINAL_REPLY_THRESHOLD = 480  # 8 jam
     COMPLAINT_FINAL_REPLY_THRESHOLD = 7200  # 5 hari
     
-    # Customer leave detection
-    CUSTOMER_LEAVE_TIMEOUT = 3  # 3 menit tanpa response dari customer
+    # Abandoned detection
+    ABANDONED_TIMEOUT_MINUTES = 30  # 30 menit tanpa response dari customer
+    CUSTOMER_LEAVE_TIMEOUT = 30  # 30 menit untuk detect customer leave
     
     # Keywords
     TICKET_REOPENED_KEYWORD = "Ticket Has Been Reopened by"
     CUSTOMER_LEAVE_KEYWORD = "Mohon maaf, dikarenakan tidak ada respon, chat ini Kami akhiri. Terima kasih telah menggunakan layanan Live Chat Toyota Astra Motor, selamat beraktivitas kembali."
+    OPERATOR_GREETING_KEYWORDS = [
+        "Selamat pagi", "Selamat siang", "Selamat sore", "Selamat malam",
+        "Selamat datang di layanan Live Chat Toyota Astra Motor"
+    ]
+    
+    # Action keywords untuk serious first reply
+    ACTION_KEYWORDS = [
+        "diteruskan", "disampaikan", "dihubungi", "dicek", "dipelajari",
+        "ditindaklanjuti", "dilakukan pengecekan", "dibantu", "dikonsultasikan",
+        "dikoordinasikan", "dilaporkan", "dievaluasi", "dianalisis"
+    ]
 
 config = Config()
 
@@ -97,13 +109,9 @@ class DataPreprocessor:
             df = pd.read_excel(file_path)
             print(f"✅ Loaded {len(df)} complaint records")
             
-            # Validasi columns penting
-            required_columns = ['No.Handphone', 'Lead Time (Solved)', 'Ticket Number']
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            
-            if missing_columns:
-                print(f"⚠️ Missing columns in complaint data: {missing_columns}")
-                return None
+            # Clean phone numbers
+            if 'No.Handphone' in df.columns:
+                df['Cleaned_Phone'] = df['No.Handphone'].astype(str).str.replace(r'\D', '', regex=True)
             
             return df
             
@@ -137,6 +145,9 @@ class DataPreprocessor:
         df_clean['Role'] = df_clean['Role'].str.lower().map(
             lambda x: self.role_mapping.get(x, x.title())
         )
+        
+        # Fill blank roles dengan 'Blank'
+        df_clean['Role'] = df_clean['Role'].fillna('Blank')
         
         # Filter meaningful messages
         df_clean = df_clean[df_clean['Message'].str.len() > 1]
@@ -182,309 +193,252 @@ class DataPreprocessor:
         
         return customer_info
 
-# ===== CONVERSATION PARSER - NEW REQUIREMENT VERSION =====
+    def match_complaint_tickets(self, raw_df, complaint_df):
+        """Match tickets antara raw data dan complaint data berdasarkan phone number"""
+        complaint_tickets = {}
+        
+        if complaint_df is None or 'Cleaned_Phone' not in complaint_df.columns:
+            print("⚠️ No complaint data or phone column not found")
+            return complaint_tickets
+        
+        # Extract phones dari raw data
+        raw_phones = self._extract_phones_from_raw_data(raw_df)
+        
+        for _, complaint_row in complaint_df.iterrows():
+            complaint_phone = complaint_row['Cleaned_Phone']
+            
+            if pd.isna(complaint_phone) or complaint_phone == 'nan':
+                continue
+                
+            # Cari matching phone di raw data
+            matching_tickets = []
+            for ticket_id, phone_info in raw_phones.items():
+                if phone_info['phone'] and complaint_phone in phone_info['phone']:
+                    matching_tickets.append(ticket_id)
+            
+            if matching_tickets:
+                complaint_tickets[complaint_phone] = {
+                    'ticket_numbers': matching_tickets,
+                    'lead_time_days': complaint_row.get('Lead Time (Solved)'),
+                    'complaint_data': complaint_row.to_dict()
+                }
+                print(f"✅ Matched phone {complaint_phone} with tickets: {matching_tickets}")
+        
+        print(f"📊 Found {len(complaint_tickets)} complaint-ticket matches")
+        return complaint_tickets
+    
+    def _extract_phones_from_raw_data(self, df):
+        """Extract phone numbers dari raw data"""
+        phone_info = {}
+        
+        for ticket_id in df['Ticket Number'].unique():
+            ticket_df = df[df['Ticket Number'] == ticket_id]
+            
+            phone = None
+            # Cari phone number di semua kolom teks
+            for col in ticket_df.columns:
+                if pd.api.types.is_string_dtype(ticket_df[col]):
+                    phone_patterns = [r'\b\d{4}[-.\s]?\d{4}[-.\s]?\d{4}\b', r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b']
+                    for pattern in phone_patterns:
+                        matches = ticket_df[col].astype(str).str.extract(f'({pattern})', expand=False)
+                        if not matches.isna().all():
+                            phone = matches.dropna().iloc[0] if not matches.dropna().empty else None
+                            if phone:
+                                phone = re.sub(r'\D', '', phone)  # Clean phone
+                                break
+                if phone:
+                    break
+            
+            phone_info[ticket_id] = {'phone': phone}
+        
+        return phone_info
+
+# Conversation Parser dengan Logic Baru
 class ConversationParser:
     def __init__(self):
         self.question_indicators = [
             '?', 'apa', 'bagaimana', 'berapa', 'kapan', 'dimana', 'kenapa',
             'bisa', 'boleh', 'minta', 'tolong', 'tanya', 'info', 'caranya',
             'mau tanya', 'boleh tanya', 'minta info', 'berapa harga',
-            'bagaimana cara', 'bisa tolong', 'mohon bantuan', 'gimana',
-            'promo', 'error', 'rusak', 'masalah', 'mogok', 'gagal', 'tidak bisa',
-            'harga', 'biaya', 'tarif', 'fungsi', 'cara', 'solusi', 'bantuan',
-            'mobil', 'servis', 'booking', 'test drive', 'dealer', 'bengkel',
-            'sparepart', 'oli', 'ban', 'aki', 'mesin', 'rem', 'transmisi'
+            'bagaimana cara', 'bisa tolong', 'mohon bantuan', 'gimana'
         ]
         
-        self.action_keywords = [
-            'diteruskan', 'disampaikan', 'dihubungi', 'dicek', 'dipelajari',
-            'ditindaklanjuti', 'dilakukan pengecekan', 'proses', 'konfirmasi',
-            'validasi', 'eskalasi', 'investigasi', 'pengecekan', 'verifikasi',
-            'kami lihat', 'kami periksa', 'akan kami', 'tunggu sebentar',
-            'mohon ditunggu', 'cek dulu'
+        self.operator_greeting_patterns = [
+            r"selamat\s+(pagi|siang|sore|malam)",
+            r"selamat\s+\w+\s+selamat\s+datang",
+            r"selamat\s+datang",
+            r"dengan\s+\w+\s+apakah\s+ada",
+            r"ada\s+yang\s+bisa\s+dibantu",
+            r"boleh\s+dibantu",
+            r"bisa\s+dibantu", 
+            r"halo.*selamat",
+            r"hai.*selamat",
+            r"perkenalkan.*saya",
+            r"layanan\s+live\s+chat",
+            r"live\s+chat\s+toyota",
+            r"toyota\s+astra\s+motor"
         ]
         
-        self.solution_keywords = [
-            'solusi', 'jawaban', 'caranya', 'prosedur', 'bisa menghubungi',
-            'silakan menghubungi', 'disarankan untuk', 'rekomendasi',
-            'berikut informasi', 'nomor telepon', 'alamat dealer', 'bengkel resmi',
-            'call center', 'hotline', 'customer service', 'info lengkap'
-        ]
+    def detect_conversation_start(self, ticket_df):
+        """Deteksi kapan conversation benar-benar dimulai dengan operator"""
+        ticket_df = ticket_df.sort_values('parsed_timestamp').reset_index(drop=True)
         
-        self.conversation_ender_patterns = [
-            'apakah sudah cukup', 'apakah informasinya sudah cukup jelas',
-            'terima kasih', 'sampai jumpa', 'goodbye', 'selamat beraktivitas'
-        ]
-
-    def find_ticket_reopened_position(self, ticket_df):
-        """Cari posisi keyword 'Ticket Has Been Reopened by'"""
+        print(f"   🔍 Analyzing {len(ticket_df)} messages for conversation start...")
+        
+        # Cari operator greeting message
         for idx, row in ticket_df.iterrows():
-            message = str(row['Message'])
-            role = str(row['Role'])
+            message = str(row['Message']).lower()
+            role = str(row['Role']).lower()
             
-            # Cari di role blank atau apapun yang mengandung keyword
-            if config.TICKET_REOPENED_KEYWORD in message:
-                return idx, row['parsed_timestamp']
-        return None, None
-
-    def find_customer_leave_position(self, ticket_df):
-        """Cari posisi customer leave keyword"""
-        for idx, row in ticket_df.iterrows():
-            message = str(row['Message'])
-            role = str(row['Role'])
-            
-            if (role.lower() == 'ticket automation' and 
-                config.CUSTOMER_LEAVE_KEYWORD in message):
-                return idx, row['parsed_timestamp']
-        return None, None
-
-    def detect_customer_leave(self, ticket_df):
-        """Deteksi customer leave berdasarkan requirement baru"""
-        customer_leave_idx, leave_time = self.find_customer_leave_position(ticket_df)
+            if any(keyword in role for keyword in ['operator', 'agent', 'admin', 'cs']):
+                for pattern in self.operator_greeting_patterns:
+                    if re.search(pattern, message, re.IGNORECASE):
+                        print(f"   ✅ Conversation start: operator greeting at position {idx}")
+                        return row['parsed_timestamp']
         
-        if not customer_leave_idx:
-            return False, None
-        
-        # Cari last operator message sebelum customer leave
-        ticket_df = ticket_df.sort_values('parsed_timestamp')
-        leave_df = ticket_df.iloc[:customer_leave_idx]
-        
-        last_operator_time = None
-        for _, row in leave_df[::-1].iterrows():  # Iterate backwards
-            if 'operator' in str(row['Role']).lower():
-                last_operator_time = row['parsed_timestamp']
-                break
-        
-        if last_operator_time and leave_time:
-            time_gap = (leave_time - last_operator_time).total_seconds() / 60
-            if time_gap >= config.CUSTOMER_LEAVE_TIMEOUT:
-                print(f"   🚶 Customer leave detected: {time_gap:.1f} min gap")
-                return True, leave_time
-        
-        return False, None
-
-    def find_main_question(self, ticket_df):
-        """Tentukan main question pertama dari customer"""
-        ticket_df = ticket_df.sort_values('parsed_timestamp')
-        
+        # Fallback: first operator message
         for idx, row in ticket_df.iterrows():
             role = str(row['Role']).lower()
-            message = str(row['Message'])
-            
-            # Cari pertama kali customer bertanya meaningful question
-            if 'customer' in role and self._is_meaningful_question(message):
-                return {
-                    'question': message,
-                    'timestamp': row['parsed_timestamp'],
-                    'position': idx
-                }
+            if any(keyword in role for keyword in ['operator', 'agent', 'admin', 'cs']):
+                print(f"   ✅ Conversation start: first operator message at position {idx}")
+                return row['parsed_timestamp']
         
+        print("   ❌ No conversation start detected")
         return None
-
+    
+    def parse_conversation(self, ticket_df):
+        """Parse conversation menjadi Q-A pairs dengan logic baru"""
+        conversation_start = self.detect_conversation_start(ticket_df)
+        
+        if not conversation_start:
+            print("   ⚠️  No conversation start detected, using all messages")
+            conv_df = ticket_df.copy()
+        else:
+            conv_df = ticket_df[ticket_df['parsed_timestamp'] >= conversation_start]
+        
+        print(f"   📝 Analyzing {len(conv_df)} messages after conversation start")
+        
+        if len(conv_df) == 0:
+            print("   ❌ No messages after conversation start")
+            return []
+        
+        # Urutkan berdasarkan timestamp
+        conv_df = conv_df.sort_values('parsed_timestamp').reset_index(drop=True)
+        
+        qa_pairs = []
+        current_question = None
+        question_time = None
+        
+        for idx, row in conv_df.iterrows():
+            role = str(row['Role']).lower()
+            message = str(row['Message'])
+            timestamp = row['parsed_timestamp']
+            
+            # CUSTOMER MESSAGE - potential question
+            if any(keyword in role for keyword in ['customer', 'user', 'pelanggan']):
+                if self._is_meaningful_question(message):
+                    # Jika ada previous question, simpan dulu
+                    if current_question:
+                        self._save_qa_pair(qa_pairs, current_question, question_time, None, None)
+                    
+                    # Start new question
+                    current_question = message
+                    question_time = timestamp
+                    print(f"   💬 Customer question: {message[:50]}...")
+            
+            # OPERATOR MESSAGE - potential answer
+            elif current_question and any(keyword in role for keyword in ['operator', 'agent', 'admin', 'cs']):
+                answer = message
+                
+                # Skip generic replies
+                if self._is_generic_reply(answer):
+                    continue
+                
+                # Pastikan ini jawaban (setelah question)
+                time_gap = (timestamp - question_time).total_seconds()
+                if time_gap >= 0:  
+                    lead_time = time_gap
+                    self._save_qa_pair(qa_pairs, current_question, question_time, answer, timestamp, role, lead_time)
+                    print(f"   ✅ Operator answer: {answer[:50]}... (LT: {lead_time/60:.1f}min)")
+                    
+                    # Reset untuk next question
+                    current_question = None
+                    question_time = None
+        
+        # Handle last question jika ada
+        if current_question:
+            self._save_qa_pair(qa_pairs, current_question, question_time, None, None)
+            print(f"   ❓ Unanswered question: {current_question[:50]}...")
+        
+        # URUTKAN Q-A PAIRS BERDASARKAN QUESTION TIME
+        qa_pairs = sorted(qa_pairs, key=lambda x: x['question_time'] if x['question_time'] else pd.Timestamp.min)
+        
+        print(f"   ✅ Found {len(qa_pairs)} Q-A pairs")
+        return qa_pairs
+    
     def _is_meaningful_question(self, message):
-        """Check jika message adalah meaningful question"""
-        if not message or len(message.strip()) < 10:
+        """Check jika message meaningful question"""
+        if not message or len(message.strip()) < 3:
             return False
             
-        message_lower = message.lower()
+        message_lower = message.lower().strip()
         
-        # Skip greetings dan very short messages
+        # Skip very short messages yang cuma greetings
         greetings = ['halo', 'hai', 'hi', 'selamat', 'pagi', 'siang', 'sore', 'malam']
-        if any(message_lower.startswith(greet) for greet in greetings) and len(message_lower) < 20:
+        words = message_lower.split()
+        if len(words) <= 2 and any(word in words for word in greetings):
             return False
         
-        # Check question indicators
+        # Question indicators
         has_question_indicator = any(indicator in message_lower for indicator in self.question_indicators)
         has_question_mark = '?' in message_lower
         
-        return has_question_indicator or has_question_mark or len(message_lower.split()) >= 5
-
-    def parse_conversation(self, ticket_df, complaint_info=None):
-        """Parse conversation berdasarkan requirement baru"""
-        print(f"   🔍 Parsing conversation with new logic...")
+        # Meaningful content check
+        meaningful_words = [w for w in words if len(w) > 2 and w not in greetings]
+        has_meaningful_content = len(meaningful_words) >= 2
         
-        # Urutkan berdasarkan timestamp
-        ticket_df = ticket_df.sort_values('parsed_timestamp').reset_index(drop=True)
-        
-        # Cari main question
-        main_question = self.find_main_question(ticket_df)
-        if not main_question:
-            print("   ❌ No main question found")
-            return []
-        
-        print(f"   ✅ Main question: {main_question['question'][:50]}...")
-        
-        # Cari ticket reopened position
-        reopened_idx, reopened_time = self.find_ticket_reopened_position(ticket_df)
-        
-        # Deteksi customer leave
-        customer_leave, leave_time = self.detect_customer_leave(ticket_df)
-        
-        # Tentukan issue type
-        issue_type = self.determine_issue_type(ticket_df, main_question, reopened_idx, complaint_info)
-        
-        # Cari replies berdasarkan issue type
-        first_reply, final_reply = self.find_replies(ticket_df, main_question, issue_type, reopened_idx, complaint_info)
-        
-        # Compile Q-A pair
-        qa_pair = {
-            'question': main_question['question'],
-            'question_time': main_question['timestamp'],
-            'is_answered': first_reply is not None or final_reply is not None,
-            'issue_type': issue_type,
-            'customer_leave': customer_leave,
-            'reopened_position': reopened_idx,
-            'ticket_reopened_time': reopened_time
+        return (has_question_indicator and has_meaningful_content) or has_question_mark or len(meaningful_words) >= 3
+    
+    def _is_generic_reply(self, message):
+        """Skip generic/bot replies"""
+        message_lower = str(message).lower()
+        generic_patterns = [
+            r'virtual\s+assistant',
+            r'akan\s+segera\s+menghubungi', 
+            r'dalam\s+antrian',
+            r'silakan\s+memilih\s+dari\s+menu'
+        ]
+        return any(re.search(pattern, message_lower) for pattern in generic_patterns)
+    
+    def _save_qa_pair(self, qa_pairs, question, question_time, answer, answer_time, answer_role=None, lead_time=None):
+        """Save Q-A pair ke list"""
+        pair_data = {
+            'question': question,
+            'question_time': question_time,
+            'is_answered': answer is not None
         }
         
-        if first_reply:
-            lead_time_seconds = (first_reply['timestamp'] - main_question['timestamp']).total_seconds()
-            qa_pair.update({
-                'first_reply': first_reply['message'],
-                'first_reply_time': first_reply['timestamp'],
-                'first_reply_role': first_reply['role'],
-                'first_lead_time_seconds': lead_time_seconds,
-                'first_lead_time_minutes': round(lead_time_seconds / 60, 2),
-                'first_lead_time_hhmmss': self._seconds_to_hhmmss(lead_time_seconds)
+        if answer:
+            pair_data.update({
+                'answer': answer,
+                'answer_time': answer_time,
+                'answer_role': answer_role,
+                'lead_time_seconds': lead_time,
+                'lead_time_minutes': round(lead_time / 60, 2) if lead_time else None,
+                'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time) if lead_time else None
+            })
+        else:
+            pair_data.update({
+                'answer': 'NO_ANSWER',
+                'answer_time': None,
+                'answer_role': None,
+                'lead_time_seconds': None,
+                'lead_time_minutes': None,
+                'lead_time_hhmmss': None
             })
         
-        if final_reply:
-            lead_time_seconds = (final_reply['timestamp'] - main_question['timestamp']).total_seconds()
-            qa_pair.update({
-                'final_reply': final_reply['message'],
-                'final_reply_time': final_reply['timestamp'],
-                'final_reply_role': final_reply['role'],
-                'final_lead_time_seconds': lead_time_seconds,
-                'final_lead_time_minutes': round(lead_time_seconds / 60, 2),
-                'final_lead_time_hhmmss': self._seconds_to_hhmmss(lead_time_seconds)
-            })
-        
-        # Untuk complaint, gunakan lead time dari file complaint
-        if issue_type == 'complaint' and complaint_info and 'lead_time_days' in complaint_info:
-            qa_pair['final_lead_time_days'] = complaint_info['lead_time_days']
-            qa_pair['final_lead_time_minutes'] = complaint_info['lead_time_days'] * 24 * 60  # Convert to minutes
-        
-        return [qa_pair]
-
-    def determine_issue_type(self, ticket_df, main_question, reopened_idx, complaint_info):
-        """Tentukan issue type berdasarkan requirement baru"""
-        
-        # 1. Check jika ini complaint
-        if complaint_info:
-            return 'complaint'
-        
-        # 2. Check jika ada ticket reopened (serious)
-        if reopened_idx is not None:
-            return 'serious'
-        
-        # 3. Normal inquiry (bisa langsung dijawab tanpa jeda ticket reopened)
-        return 'normal'
-
-    def find_replies(self, ticket_df, main_question, issue_type, reopened_idx, complaint_info):
-        """Cari first dan final reply berdasarkan issue type"""
-        first_reply = None
-        final_reply = None
-        
-        main_question_time = main_question['timestamp']
-        main_question_pos = main_question['position']
-        
-        if issue_type == 'normal':
-            # Untuk normal: cari jawaban langsung setelah main question
-            first_reply = self._find_direct_reply(ticket_df, main_question_pos, main_question_time)
-            final_reply = first_reply  # Untuk normal, first reply = final reply
-            
-        elif issue_type == 'serious':
-            # Untuk serious: first reply sebelum ticket reopened, final reply setelah ticket reopened
-            first_reply = self._find_serious_first_reply(ticket_df, main_question_pos, reopened_idx)
-            final_reply = self._find_serious_final_reply(ticket_df, reopened_idx)
-            
-        elif issue_type == 'complaint':
-            # Untuk complaint: first reply dari conversation, final reply dari file complaint
-            first_reply = self._find_complaint_first_reply(ticket_df, main_question_pos)
-            # Final reply lead time dari file complaint, tidak ada message
-        
-        return first_reply, final_reply
-
-    def _find_direct_reply(self, ticket_df, main_question_pos, main_question_time):
-        """Cari direct reply untuk normal inquiry"""
-        for idx in range(main_question_pos + 1, len(ticket_df)):
-            row = ticket_df.iloc[idx]
-            role = str(row['Role']).lower()
-            message = str(row['Message'])
-            
-            if 'operator' in role and self._contains_solution(message):
-                return {
-                    'message': message,
-                    'timestamp': row['parsed_timestamp'],
-                    'role': row['Role']
-                }
-        
-        return None
-
-    def _find_serious_first_reply(self, ticket_df, main_question_pos, reopened_idx):
-        """Cari first reply untuk serious issue (sebelum ticket reopened)"""
-        if reopened_idx is None:
-            return None
-            
-        for idx in range(main_question_pos + 1, reopened_idx):
-            row = ticket_df.iloc[idx]
-            role = str(row['Role']).lower()
-            message = str(row['Message'])
-            
-            if 'operator' in role and self._contains_action(message):
-                return {
-                    'message': message,
-                    'timestamp': row['parsed_timestamp'],
-                    'role': row['Role']
-                }
-        
-        return None
-
-    def _find_serious_final_reply(self, ticket_df, reopened_idx):
-        """Cari final reply untuk serious issue (setelah ticket reopened)"""
-        if reopened_idx is None:
-            return None
-            
-        for idx in range(reopened_idx + 1, len(ticket_df)):
-            row = ticket_df.iloc[idx]
-            role = str(row['Role']).lower()
-            message = str(row['Message'])
-            
-            if 'operator' in role:
-                return {
-                    'message': message,
-                    'timestamp': row['parsed_timestamp'],
-                    'role': row['Role']
-                }
-        
-        return None
-
-    def _find_complaint_first_reply(self, ticket_df, main_question_pos):
-        """Cari first reply untuk complaint"""
-        for idx in range(main_question_pos + 1, len(ticket_df)):
-            row = ticket_df.iloc[idx]
-            role = str(row['Role']).lower()
-            message = str(row['Message'])
-            
-            if 'operator' in role:
-                return {
-                    'message': message,
-                    'timestamp': row['parsed_timestamp'],
-                    'role': row['Role']
-                }
-        
-        return None
-
-    def _contains_action(self, message):
-        """Check jika message mengandung action keywords"""
-        message_lower = message.lower()
-        return any(action in message_lower for action in self.action_keywords)
-
-    def _contains_solution(self, message):
-        """Check jika message mengandung solution"""
-        message_lower = message.lower()
-        return any(solution in message_lower for solution in self.solution_keywords)
-
+        qa_pairs.append(pair_data)
+    
     def _seconds_to_hhmmss(self, seconds):
         """Convert seconds to HH:MM:SS format"""
         try:
@@ -495,283 +449,372 @@ class ConversationParser:
         except:
             return "00:00:00"
 
-# Complaint Matcher
-class ComplaintMatcher:
-    def __init__(self):
-        self.complaint_data = None
-    
-    def load_complaint_data(self, file_path):
-        """Load complaint data"""
-        try:
-            self.complaint_data = pd.read_excel(file_path)
-            print(f"✅ Loaded {len(self.complaint_data)} complaint records")
-            return True
-        except Exception as e:
-            print(f"❌ Error loading complaint data: {e}")
-            return False
-    
-    def extract_phone_from_conversation(self, ticket_df):
-        """Extract phone number dari conversation"""
-        for _, row in ticket_df.iterrows():
-            message = str(row['Message'])
-            
-            # Cari phone patterns
-            phone_patterns = [
-                r'\b\d{4}[-.\s]?\d{4}[-.\s]?\d{4}\b',
-                r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b',
-                r'\b\d{2}[-.\s]?\d{4}[-.\s]?\d{4}\b'
-            ]
-            
-            for pattern in phone_patterns:
-                matches = re.findall(pattern, message)
-                if matches:
-                    return matches[0]  # Return first match
-        
-        return None
-    
-    def match_complaint(self, ticket_df, ticket_id):
-        """Match conversation dengan complaint data"""
-        if self.complaint_data is None:
-            return None
-        
-        # Cari phone number dari conversation
-        phone = self.extract_phone_from_conversation(ticket_df)
-        
-        if not phone:
-            return None
-        
-        print(f"   📞 Found phone in conversation: {phone}")
-        
-        # Cari di complaint data
-        for _, complaint_row in self.complaint_data.iterrows():
-            complaint_phone = str(complaint_row['No.Handphone'])
-            
-            # Normalize phone numbers untuk matching
-            normalized_phone = self.normalize_phone(phone)
-            normalized_complaint_phone = self.normalize_phone(complaint_phone)
-            
-            if normalized_phone and normalized_complaint_phone and normalized_phone in normalized_complaint_phone:
-                print(f"   ✅ Matched complaint for phone: {phone}")
-                
-                return {
-                    'complaint_phone': complaint_phone,
-                    'lead_time_days': complaint_row['Lead Time (Solved)'],
-                    'ticket_number': complaint_row.get('Ticket Number', 'Unknown'),
-                    'complaint_data': dict(complaint_row)
-                }
-        
-        return None
-    
-    def normalize_phone(self, phone):
-        """Normalize phone number untuk matching"""
-        if pd.isna(phone):
-            return None
-        
-        phone_str = str(phone)
-        # Hanya ambil digits
-        digits = re.sub(r'\D', '', phone_str)
-        
-        # Handle berbagai format
-        if digits.startswith('0'):
-            digits = '62' + digits[1:]
-        elif digits.startswith('8'):
-            digits = '62' + digits
-        elif digits.startswith('+'):
-            digits = digits[1:]
-        
-        return digits
-
-# Main Issue Detector (Simplified)
+# Main Issue Detector dengan Logic Baru
 class MainIssueDetector:
     def __init__(self):
-        # Keyword patterns untuk menentukan issue type
-        self.serious_indicators = [
-            'error', 'rusak', 'masalah', 'gagal', 'mogok', 'mati', 'tidak bisa',
-            'help', 'urgent', 'kendala', 'trouble', 'macet', 'hang', 'blank',
-            'not responding', 'bermasalah', 'gangguan'
+        # Keyword untuk menentukan jenis issue
+        self.solution_keywords = [
+            'solusi', 'jawaban', 'caranya', 'prosedur', 'bisa menghubungi',
+            'silakan menghubungi', 'disarankan untuk', 'rekomendasi'
         ]
         
-        self.complaint_indicators = [
+        self.complaint_keywords = [
             'komplain', 'kecewa', 'marah', 'protes', 'pengaduan', 'keluhan',
             'sakit hati', 'tidak puas', 'keberatan', 'sangat kecewa'
         ]
     
-    def detect_issue_type(self, qa_pairs, complaint_info=None):
-        """Deteksi issue type - simplified version"""
+    def detect_main_issue(self, qa_pairs):
+        """Deteksi main issue dari Q-A pairs - LOGIC BARU"""
         if not qa_pairs:
-            return 'unknown'
+            return None
         
-        # Priority: complaint > serious > normal
-        if complaint_info:
-            return 'complaint'
+        # Ambil question pertama sebagai main issue
+        main_question = qa_pairs[0]['question']
+        main_question_time = qa_pairs[0]['question_time']
         
-        main_question = qa_pairs[0]['question'].lower()
-        
-        # Check serious indicators
-        if any(indicator in main_question for indicator in self.serious_indicators):
-            return 'serious'
-        
-        # Check complaint indicators  
-        if any(indicator in main_question for indicator in self.complaint_indicators):
-            return 'complaint'
-        
-        return 'normal'
+        return {
+            'question': main_question,
+            'question_time': main_question_time,
+            'qa_pairs': qa_pairs  # Simpan semua QA pairs untuk analysis selanjutnya
+        }
 
-# Reply Analyzer (Simplified)
+# Reply Analyzer dengan Logic Baru
 class ReplyAnalyzer:
-    def __init__(self):
-        self.action_patterns = [
-            r'diteruskan', r'disampaikan', r'dihubungi', r'dicek', r'dipelajari',
-            r'ditindaklanjuti', r'dilakukan pengecekan', r'proses', r'konfirmasi',
-            r'validasi', r'eskalasi', r'investigasi', r'pengecekan', r'verifikasi',
-            r'kami lihat', r'kami periksa', r'akan kami', r'tunggu sebentar',
-            r'mohon ditunggu', r'cek dulu'
-        ]
+    def __init__(self, complaint_tickets=None):
+        self.complaint_tickets = complaint_tickets or {}
+        self.action_keywords = config.ACTION_KEYWORDS
+    
+    def analyze_replies(self, ticket_id, ticket_df, qa_pairs, main_issue):
+        """Analyze replies dengan LOGIC BARU"""
+        print(f"🔍 Analyzing replies for ticket {ticket_id}")
         
-        self.solution_patterns = [
-            r'solusi', r'jawaban', r'caranya', r'prosedur', r'bisa menghubungi',
-            r'silakan menghubungi', r'disarankan untuk', r'rekomendasi',
-            r'berikut informasi', r'nomor telepon', r'alamat dealer', r'bengkel resmi',
-            r'call center', r'hotline', r'customer service', r'info lengkap'
-        ]
-
-    def analyze_replies(self, qa_pairs):
-        """Analyze replies dengan logic baru"""
-        if not qa_pairs:
-            return None, None, {'requirement_compliant': False}
+        # Cek apakah ini complaint ticket
+        is_complaint, complaint_data = self._is_complaint_ticket(ticket_id)
         
-        qa_pair = qa_pairs[0]
-        issue_type = qa_pair.get('issue_type', 'normal')
+        if is_complaint:
+            print("   🚨 COMPLAINT ticket detected")
+            return self._analyze_complaint_replies(ticket_id, ticket_df, qa_pairs, main_issue, complaint_data)
         
-        first_reply_found = 'first_reply' in qa_pair
-        final_reply_found = 'final_reply' in qa_pair
+        # Cek apakah ada keyword "Ticket Has Been Reopened by"
+        has_reopened = self._has_ticket_reopened(ticket_df)
         
-        # Validasi requirements
-        requirement_compliant = self._validate_requirements(
-            issue_type, first_reply_found, final_reply_found, qa_pair.get('customer_leave', False)
-        )
+        if has_reopened:
+            print("   ⚠️  SERIOUS ticket detected (has reopened keyword)")
+            return self._analyze_serious_replies(ticket_df, qa_pairs, main_issue)
+        else:
+            print("   ✅ NORMAL ticket detected")
+            return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+    
+    def _is_complaint_ticket(self, ticket_id):
+        """Cek apakah ticket termasuk complaint"""
+        for phone, complaint_info in self.complaint_tickets.items():
+            if ticket_id in complaint_info['ticket_numbers']:
+                return True, complaint_info
+        return False, None
+    
+    def _has_ticket_reopened(self, ticket_df):
+        """Cek apakah ada keyword Ticket Has Been Reopened by"""
+        for _, row in ticket_df.iterrows():
+            if config.TICKET_REOPENED_KEYWORD in str(row['Message']):
+                return True
+        return False
+    
+    def _analyze_complaint_replies(self, ticket_id, ticket_df, qa_pairs, main_issue, complaint_data):
+        """Analyze replies untuk complaint tickets"""
+        # Cari first reply (operator reply pertama setelah main question)
+        first_reply = self._find_first_reply(ticket_df, main_issue['question_time'])
+        
+        # Untuk complaint, final reply lead time dari file complaint
+        final_reply_lead_time_days = complaint_data.get('lead_time_days')
+        final_reply_lead_time_minutes = final_reply_lead_time_days * 24 * 60 if final_reply_lead_time_days else None
         
         analysis_result = {
-            'issue_type': issue_type,
-            'first_reply_found': first_reply_found,
-            'final_reply_found': final_reply_found,
-            'customer_leave': qa_pair.get('customer_leave', False),
-            'requirement_compliant': requirement_compliant,
-            'lead_times': {
-                'first_reply_lead_time_minutes': qa_pair.get('first_lead_time_minutes'),
-                'final_reply_lead_time_minutes': qa_pair.get('final_lead_time_minutes'),
-                'first_reply_lead_time_hhmmss': qa_pair.get('first_lead_time_hhmmss'),
-                'final_reply_lead_time_hhmmss': qa_pair.get('final_lead_time_hhmmss')
-            }
+            'issue_type': 'complaint',
+            'first_reply': first_reply,
+            'final_reply': {
+                'message': 'COMPLAINT_RESOLUTION',
+                'timestamp': None,
+                'lead_time_minutes': final_reply_lead_time_minutes,
+                'lead_time_days': final_reply_lead_time_days,
+                'note': 'Final resolution from complaint system'
+            },
+            'customer_leave': False,
+            'requirement_compliant': first_reply is not None
         }
         
-        # Create reply objects
-        first_reply = None
-        if first_reply_found:
-            first_reply = {
-                'message': qa_pair['first_reply'],
-                'timestamp': qa_pair['first_reply_time'],
-                'role': qa_pair.get('first_reply_role', 'Operator'),
-                'lead_time_minutes': qa_pair.get('first_lead_time_minutes'),
-                'lead_time_hhmmss': qa_pair.get('first_lead_time_hhmmss')
+        return analysis_result
+    
+    def _analyze_serious_replies(self, ticket_df, qa_pairs, main_issue):
+        """Analyze replies untuk serious tickets"""
+        # Cari timestamp ticket reopened
+        reopened_time = self._find_ticket_reopened_time(ticket_df)
+        
+        # First reply: operator reply SEBELUM ticket reopened yang mengandung action
+        first_reply = self._find_serious_first_reply(ticket_df, main_issue['question_time'], reopened_time)
+        
+        # Final reply: operator reply PERTAMA SETELAH ticket reopened
+        final_reply = self._find_serious_final_reply(ticket_df, reopened_time)
+        
+        # Cek customer leave
+        customer_leave = self._check_customer_leave(ticket_df)
+        
+        analysis_result = {
+            'issue_type': 'serious',
+            'first_reply': first_reply,
+            'final_reply': final_reply,
+            'customer_leave': customer_leave,
+            'requirement_compliant': first_reply is not None and final_reply is not None
+        }
+        
+        return analysis_result
+    
+    def _analyze_normal_replies(self, ticket_df, qa_pairs, main_issue):
+        """Analyze replies untuk normal tickets"""
+        # Cari operator reply yang mengandung solusi (langsung dianggap final reply)
+        final_reply = self._find_normal_final_reply(ticket_df, main_issue['question_time'])
+        
+        # Untuk normal, tidak ada first reply requirement
+        customer_leave = self._check_customer_leave(ticket_df)
+        
+        analysis_result = {
+            'issue_type': 'normal',
+            'first_reply': None,  # Normal tidak butuh first reply
+            'final_reply': final_reply,
+            'customer_leave': customer_leave,
+            'requirement_compliant': final_reply is not None
+        }
+        
+        return analysis_result
+    
+    def _find_first_reply(self, ticket_df, question_time):
+        """Cari first reply (operator reply pertama setelah question)"""
+        operator_messages = ticket_df[
+            (ticket_df['parsed_timestamp'] > question_time) &
+            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+        ].sort_values('parsed_timestamp')
+        
+        if not operator_messages.empty:
+            first_msg = operator_messages.iloc[0]
+            lead_time = (first_msg['parsed_timestamp'] - question_time).total_seconds()
+            
+            return {
+                'message': first_msg['Message'],
+                'timestamp': first_msg['parsed_timestamp'],
+                'lead_time_seconds': lead_time,
+                'lead_time_minutes': round(lead_time / 60, 2),
+                'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time)
+            }
+        return None
+    
+    def _find_serious_first_reply(self, ticket_df, question_time, reopened_time):
+        """Cari serious first reply (sebelum reopened, mengandung action)"""
+        operator_messages = ticket_df[
+            (ticket_df['parsed_timestamp'] > question_time) &
+            (ticket_df['parsed_timestamp'] < reopened_time) &
+            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+        ].sort_values('parsed_timestamp')
+        
+        for _, msg in operator_messages.iterrows():
+            if self._contains_action_keyword(msg['Message']):
+                lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
+                
+                return {
+                    'message': msg['Message'],
+                    'timestamp': msg['parsed_timestamp'],
+                    'lead_time_seconds': lead_time,
+                    'lead_time_minutes': round(lead_time / 60, 2),
+                    'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
+                    'note': 'Contains action keyword'
+                }
+        
+        # Fallback: ambil operator reply pertama sebelum reopened
+        if not operator_messages.empty:
+            first_msg = operator_messages.iloc[0]
+            lead_time = (first_msg['parsed_timestamp'] - question_time).total_seconds()
+            
+            return {
+                'message': first_msg['Message'],
+                'timestamp': first_msg['parsed_timestamp'],
+                'lead_time_seconds': lead_time,
+                'lead_time_minutes': round(lead_time / 60, 2),
+                'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
+                'note': 'First operator reply before reopened'
             }
         
-        final_reply = None
-        if final_reply_found:
-            final_reply = {
-                'message': qa_pair['final_reply'],
-                'timestamp': qa_pair['final_reply_time'],
-                'role': qa_pair.get('final_reply_role', 'Operator'),
-                'lead_time_minutes': qa_pair.get('final_lead_time_minutes'),
-                'lead_time_hhmmss': qa_pair.get('final_lead_time_hhmmss')
+        return None
+    
+    def _find_serious_final_reply(self, ticket_df, reopened_time):
+        """Cari serious final reply (pertama setelah reopened)"""
+        operator_messages = ticket_df[
+            (ticket_df['parsed_timestamp'] > reopened_time) &
+            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+        ].sort_values('parsed_timestamp')
+        
+        if not operator_messages.empty:
+            first_msg = operator_messages.iloc[0]
+            
+            return {
+                'message': first_msg['Message'],
+                'timestamp': first_msg['parsed_timestamp'],
+                'note': 'First operator reply after ticket reopened'
             }
-        elif issue_type == 'complaint' and 'final_lead_time_days' in qa_pair:
-            # Untuk complaint, buat final reply object tanpa message
-            final_reply = {
-                'message': 'COMPLAINT_RESOLVED',
-                'timestamp': None,
-                'role': 'System',
-                'lead_time_days': qa_pair['final_lead_time_days'],
-                'lead_time_minutes': qa_pair.get('final_lead_time_minutes'),
-                'note': f"Resolved in {qa_pair['final_lead_time_days']} days (from complaint data)"
+        return None
+    
+    def _find_normal_final_reply(self, ticket_df, question_time):
+        """Cari normal final reply (mengandung solusi)"""
+        operator_messages = ticket_df[
+            (ticket_df['parsed_timestamp'] > question_time) &
+            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+        ].sort_values('parsed_timestamp')
+        
+        # Cari yang mengandung solusi
+        for _, msg in operator_messages.iterrows():
+            if self._contains_solution_keyword(msg['Message']):
+                lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
+                
+                return {
+                    'message': msg['Message'],
+                    'timestamp': msg['parsed_timestamp'],
+                    'lead_time_seconds': lead_time,
+                    'lead_time_minutes': round(lead_time / 60, 2),
+                    'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
+                    'note': 'Contains solution'
+                }
+        
+        # Fallback: ambil operator reply pertama
+        if not operator_messages.empty:
+            first_msg = operator_messages.iloc[0]
+            lead_time = (first_msg['parsed_timestamp'] - question_time).total_seconds()
+            
+            return {
+                'message': first_msg['Message'],
+                'timestamp': first_msg['parsed_timestamp'],
+                'lead_time_seconds': lead_time,
+                'lead_time_minutes': round(lead_time / 60, 2),
+                'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
+                'note': 'First operator reply'
             }
         
-        return first_reply, final_reply, analysis_result
-
-    def _validate_requirements(self, issue_type, first_reply_found, final_reply_found, customer_leave):
-        """Validasi requirements berdasarkan issue type"""
-        if issue_type == 'normal':
-            return final_reply_found or customer_leave
-        elif issue_type == 'serious':
-            return first_reply_found  # Final reply optional untuk serious
-        elif issue_type == 'complaint':
-            return first_reply_found  # Final reply dari file complaint
+        return None
+    
+    def _find_ticket_reopened_time(self, ticket_df):
+        """Cari timestamp ketika ticket di-reopen"""
+        for _, row in ticket_df.iterrows():
+            if config.TICKET_REOPENED_KEYWORD in str(row['Message']):
+                return row['parsed_timestamp']
+        return None
+    
+    def _contains_action_keyword(self, message):
+        """Cek apakah message mengandung action keyword"""
+        message_lower = str(message).lower()
+        return any(keyword in message_lower for keyword in self.action_keywords)
+    
+    def _contains_solution_keyword(self, message):
+        """Cek apakah message mengandung solution keyword"""
+        message_lower = str(message).lower()
+        solution_keywords = [
+            'solusi', 'jawaban', 'caranya', 'prosedur', 'bisa menghubungi',
+            'silakan menghubungi', 'disarankan untuk', 'rekomendasi'
+        ]
+        return any(keyword in message_lower for keyword in solution_keywords)
+    
+    def _check_customer_leave(self, ticket_df):
+        """Cek apakah customer leave conversation"""
+        # Cari keyword customer leave dari ticket automation
+        for _, row in ticket_df.iterrows():
+            role = str(row['Role']).lower()
+            message = str(row['Message'])
+            
+            if 'ticket automation' in role and config.CUSTOMER_LEAVE_KEYWORD in message:
+                print("   🚶 Customer leave detected")
+                return True
+        
         return False
+    
+    def _seconds_to_hhmmss(self, seconds):
+        """Convert seconds to HH:MM:SS format"""
+        try:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            seconds = int(seconds % 60)
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        except:
+            return "00:00:00"
 
-# Complete Analysis Pipeline (NEW VERSION)
+# Complete Analysis Pipeline
 class CompleteAnalysisPipeline:
-    def __init__(self):
+    def __init__(self, complaint_data_path=None):
         self.preprocessor = DataPreprocessor()
         self.parser = ConversationParser()
-        self.complaint_matcher = ComplaintMatcher()
         self.issue_detector = MainIssueDetector()
-        self.reply_analyzer = ReplyAnalyzer()
+        self.complaint_tickets = {}
+        
+        # Load complaint data jika ada
+        if complaint_data_path and os.path.exists(complaint_data_path):
+            complaint_df = self.preprocessor.load_complaint_data(complaint_data_path)
+            self.complaint_tickets = self.preprocessor.match_complaint_tickets(pd.DataFrame(), complaint_df)
+        
+        self.reply_analyzer = ReplyAnalyzer(self.complaint_tickets)
         self.results = []
         self.analysis_stats = {}
         
-        print("🚀 Complete Analysis Pipeline Initialized (NEW REQUIREMENTS)")
-
-    def load_complaint_data(self, complaint_file_path):
-        """Load complaint data"""
-        return self.complaint_matcher.load_complaint_data(complaint_file_path)
-
+        print("🚀 Complete Analysis Pipeline Initialized")
+    
     def analyze_single_ticket(self, ticket_df, ticket_id):
-        """Analisis single ticket dengan logic baru"""
+        """Analisis lengkap untuk single ticket"""
         print(f"🎯 Analyzing Ticket: {ticket_id}")
         
         try:
-            # Match dengan complaint data
-            complaint_info = self.complaint_matcher.match_complaint(ticket_df, ticket_id)
-            
-            # Parse conversation dengan logic baru
-            qa_pairs = self.parser.parse_conversation(ticket_df, complaint_info)
+            # Step 1: Parse Q-A pairs
+            qa_pairs = self.parser.parse_conversation(ticket_df)
             
             if not qa_pairs:
                 return self._create_ticket_result(ticket_id, "failed", "No Q-A pairs detected", {})
             
-            # Analyze replies
-            first_reply, final_reply, reply_analysis = self.reply_analyzer.analyze_replies(qa_pairs)
+            print(f"   ✓ Found {len(qa_pairs)} Q-A pairs")
             
-            # Compile result
+            # Step 2: Detect main issue
+            main_issue = self.issue_detector.detect_main_issue(qa_pairs)
+            
+            if not main_issue:
+                return self._create_ticket_result(ticket_id, "failed", "No main issue detected", {})
+            
+            print(f"   ✓ Main issue detected: {main_issue['question'][:50]}...")
+            
+            # Step 3: Analyze replies dengan LOGIC BARU
+            reply_analysis = self.reply_analyzer.analyze_replies(ticket_id, ticket_df, qa_pairs, main_issue)
+            
+            print(f"   ✓ Reply analysis: {reply_analysis['issue_type']}")
+            
+            # Step 4: Compile results
             result = self._compile_ticket_result(
-                ticket_id, ticket_df, qa_pairs[0], first_reply, final_reply, reply_analysis, complaint_info
+                ticket_id, ticket_df, qa_pairs, main_issue, reply_analysis
             )
             
-            print(f"   ✅ Analysis completed - {result['final_issue_type'].upper()}")
+            print(f"   ✅ Analysis completed")
             return result
             
         except Exception as e:
             error_msg = f"Error: {str(e)}"
             print(f"   ❌ Analysis failed: {error_msg}")
             return self._create_ticket_result(ticket_id, "failed", error_msg, {})
-
-    def _compile_ticket_result(self, ticket_id, ticket_df, qa_pair, first_reply, final_reply, reply_analysis, complaint_info):
+    
+    def _compile_ticket_result(self, ticket_id, ticket_df, qa_pairs, main_issue, reply_analysis):
         """Compile ticket result"""
+        # Hitung quality score
+        quality_score = 0
+        if reply_analysis['first_reply']:
+            quality_score += 2
+        if reply_analysis['final_reply']:
+            quality_score += 2
+        if not reply_analysis['customer_leave']:
+            quality_score += 1
         
-        # Determine performance rating
+        # Tentukan performance rating
         if reply_analysis['requirement_compliant']:
             performance_rating = 'good'
         else:
             performance_rating = 'fair'
-        
-        # Calculate quality score
-        quality_score = 0
-        if first_reply:
-            quality_score += 2
-        if final_reply:
-            quality_score += 2
-        if reply_analysis.get('customer_leave'):
-            quality_score += 1
         
         result = {
             'ticket_id': ticket_id,
@@ -780,57 +823,47 @@ class CompleteAnalysisPipeline:
             
             # Conversation info
             'total_messages': len(ticket_df),
-            'total_qa_pairs': 1,  # Selalu 1 dengan logic baru
-            'answered_pairs': 1 if qa_pair['is_answered'] else 0,
-            'customer_leave': qa_pair.get('customer_leave', False),
+            'total_qa_pairs': len(qa_pairs),
+            'answered_pairs': sum(1 for pair in qa_pairs if pair['is_answered']),
+            'customer_leave': reply_analysis['customer_leave'],
             
-            # Main issue
-            'main_question': qa_pair['question'],
-            'main_question_time': qa_pair['question_time'],
-            'final_issue_type': qa_pair['issue_type'],
-            'is_complaint': complaint_info is not None,
+            # Main issue analysis
+            'main_question': main_issue['question'],
+            'main_question_time': main_issue['question_time'],
+            'final_issue_type': reply_analysis['issue_type'],
             
             # Reply analysis
-            'first_reply_found': first_reply is not None,
-            'final_reply_found': final_reply is not None,
-            'first_reply_message': first_reply['message'] if first_reply else None,
-            'first_reply_time': first_reply['timestamp'] if first_reply else None,
-            'final_reply_message': final_reply['message'] if final_reply else None,
-            'final_reply_time': final_reply['timestamp'] if final_reply else None,
+            'first_reply_found': reply_analysis['first_reply'] is not None,
+            'final_reply_found': reply_analysis['final_reply'] is not None,
+            'first_reply_message': reply_analysis['first_reply']['message'] if reply_analysis['first_reply'] else None,
+            'first_reply_time': reply_analysis['first_reply']['timestamp'] if reply_analysis['first_reply'] else None,
+            'final_reply_message': reply_analysis['final_reply']['message'] if reply_analysis['final_reply'] else None,
+            'final_reply_time': reply_analysis['final_reply']['timestamp'] if reply_analysis['final_reply'] else None,
             
             # Lead times
-            'first_reply_lead_time_minutes': first_reply['lead_time_minutes'] if first_reply else None,
-            'final_reply_lead_time_minutes': final_reply['lead_time_minutes'] if final_reply else None,
-            'first_reply_lead_time_hhmmss': first_reply['lead_time_hhmmss'] if first_reply else None,
-            'final_reply_lead_time_hhmmss': final_reply['lead_time_hhmmss'] if final_reply else None,
+            'first_reply_lead_time_minutes': reply_analysis['first_reply'].get('lead_time_minutes') if reply_analysis['first_reply'] else None,
+            'final_reply_lead_time_minutes': reply_analysis['final_reply'].get('lead_time_minutes') if reply_analysis['final_reply'] else None,
+            'first_reply_lead_time_hhmmss': reply_analysis['first_reply'].get('lead_time_hhmmss') if reply_analysis['first_reply'] else None,
+            'final_reply_lead_time_hhmmss': reply_analysis['final_reply'].get('lead_time_hhmmss') if reply_analysis['final_reply'] else None,
+            
+            # Untuk complaint
+            'final_reply_lead_time_days': reply_analysis['final_reply'].get('lead_time_days') if reply_analysis['final_reply'] else None,
             
             # Performance metrics
             'performance_rating': performance_rating,
             'quality_score': quality_score,
-            'quality_rating': 'good' if quality_score >= 3 else 'fair',
+            'quality_rating': 'good' if quality_score >= 4 else 'fair' if quality_score >= 2 else 'poor',
             'requirement_compliant': reply_analysis['requirement_compliant'],
             
-            # Complaint info
-            'complaint_data': complaint_info,
-            'final_lead_time_days': final_reply.get('lead_time_days') if final_reply else None,
-            
             # Raw data
-            '_raw_qa_pairs': [qa_pair],
+            '_raw_qa_pairs': qa_pairs,
             '_raw_reply_analysis': reply_analysis
         }
         
-        # Add recommendation
-        if not reply_analysis['requirement_compliant']:
-            result['recommendation'] = 'Missing required replies'
-        elif qa_pair.get('customer_leave'):
-            result['recommendation'] = 'Customer left conversation'
-        else:
-            result['recommendation'] = 'Meets requirements'
-        
         return result
-
+    
     def _create_ticket_result(self, ticket_id, status, reason, extra_data):
-        """Create result object untuk failed analysis"""
+        """Create standardized result object"""
         result = {
             'ticket_id': ticket_id,
             'status': status,
@@ -839,10 +872,10 @@ class CompleteAnalysisPipeline:
         }
         result.update(extra_data)
         return result
-
+    
     def analyze_all_tickets(self, df, max_tickets=None):
         """Analisis semua tickets"""
-        print("🚀 STARTING ANALYSIS PIPELINE (NEW REQUIREMENTS)")
+        print("🚀 STARTING COMPLETE ANALYSIS PIPELINE")
         
         ticket_ids = df['Ticket Number'].unique()
         
@@ -871,12 +904,14 @@ class CompleteAnalysisPipeline:
         
         # Calculate statistics
         self.analysis_stats = self._calculate_stats(len(ticket_ids))
+        
+        print(f"\n🎉 ANALYSIS PIPELINE COMPLETED!")
         self._print_summary_report()
         
         return self.results, self.analysis_stats
-
+    
     def _calculate_stats(self, total_tickets):
-        """Hitung statistics"""
+        """Hitung statistics dari results"""
         successful = [r for r in self.results if r['status'] == 'success']
         failed = [r for r in self.results if r['status'] == 'failed']
         
@@ -892,15 +927,15 @@ class CompleteAnalysisPipeline:
             issue_types = [r['final_issue_type'] for r in successful]
             stats['issue_type_distribution'] = dict(Counter(issue_types))
             
-            # Performance distribution
-            performances = [r['performance_rating'] for r in successful]
-            stats['performance_distribution'] = dict(Counter(performances))
+            # Performance metrics
+            performance_ratings = [r['performance_rating'] for r in successful]
+            stats['performance_distribution'] = dict(Counter(performance_ratings))
             
             # Lead time statistics
             first_lead_times = [r['first_reply_lead_time_minutes'] for r in successful if r.get('first_reply_lead_time_minutes')]
             final_lead_times = [r['final_reply_lead_time_minutes'] for r in successful if r.get('final_reply_lead_time_minutes')]
             
-            stats['overall_lead_times'] = {
+            stats['lead_time_stats'] = {
                 'first_reply_avg_minutes': np.mean(first_lead_times) if first_lead_times else 0,
                 'final_reply_avg_minutes': np.mean(final_lead_times) if final_lead_times else 0,
                 'first_reply_samples': len(first_lead_times),
@@ -911,32 +946,121 @@ class CompleteAnalysisPipeline:
             stats['reply_effectiveness'] = {
                 'first_reply_found_rate': sum(1 for r in successful if r['first_reply_found']) / len(successful),
                 'final_reply_found_rate': sum(1 for r in successful if r['final_reply_found']) / len(successful),
-                'customer_leave_cases': sum(1 for r in successful if r.get('customer_leave', False))
+                'customer_leave_cases': sum(1 for r in successful if r['customer_leave'])
             }
         
         return stats
-
+    
     def _print_summary_report(self):
         """Print summary report"""
         stats = self.analysis_stats
         
-        print(f"\n🎉 ANALYSIS COMPLETED!")
-        print(f"📊 Total Tickets: {stats['total_tickets']}")
-        print(f"✅ Successful: {stats['successful_analysis']} ({stats['success_rate']*100:.1f}%)")
+        print(f"📊 ANALYSIS SUMMARY REPORT")
+        print(f"   • Total Tickets: {stats['total_tickets']}")
+        print(f"   • Successful Analysis: {stats['successful_analysis']} ({stats['success_rate']*100:.1f}%)")
         
         if 'issue_type_distribution' in stats:
-            print(f"🎯 Issue Types: {stats['issue_type_distribution']}")
+            print(f"   • Issue Types: {stats['issue_type_distribution']}")
         
-        if 'overall_lead_times' in stats:
-            lt = stats['overall_lead_times']
-            print(f"⏱️ Lead Times - First: {lt['first_reply_avg_minutes']:.1f}min, Final: {lt['final_reply_avg_minutes']:.1f}min")
+        if 'lead_time_stats' in stats:
+            lt_stats = stats['lead_time_stats']
+            print(f"   • Avg First Reply: {lt_stats['first_reply_avg_minutes']:.1f} min")
+            print(f"   • Avg Final Reply: {lt_stats['final_reply_avg_minutes']:.1f} min")
+        
+        if 'reply_effectiveness' in stats:
+            eff = stats['reply_effectiveness']
+            print(f"   • First Reply Found: {eff['first_reply_found_rate']*100:.1f}%")
+            print(f"   • Final Reply Found: {eff['final_reply_found_rate']*100:.1f}%")
+            print(f"   • Customer Leave Cases: {eff['customer_leave_cases']}")
+
+# Results Exporter
+class ResultsExporter:
+    def __init__(self):
+        self.output_dir = "output/"
+        Path(self.output_dir).mkdir(exist_ok=True)
+    
+    def export_comprehensive_results(self, results, stats):
+        """Export results ke Excel"""
+        try:
+            output_path = f"{self.output_dir}analysis_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            
+            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                # Detailed results
+                detailed_data = []
+                for result in results:
+                    if result['status'] == 'success':
+                        detailed_data.append({
+                            'Ticket_ID': result['ticket_id'],
+                            'Issue_Type': result['final_issue_type'],
+                            'Main_Question': result['main_question'],
+                            'First_Reply_Found': result['first_reply_found'],
+                            'Final_Reply_Found': result['final_reply_found'],
+                            'First_Reply_Lead_Time_Min': result.get('first_reply_lead_time_minutes'),
+                            'Final_Reply_Lead_Time_Min': result.get('final_reply_lead_time_minutes'),
+                            'Final_Reply_Lead_Time_Days': result.get('final_reply_lead_time_days'),
+                            'Performance_Rating': result['performance_rating'],
+                            'Quality_Score': result['quality_score'],
+                            'Customer_Leave': result['customer_leave']
+                        })
+                
+                if detailed_data:
+                    df_detailed = pd.DataFrame(detailed_data)
+                    df_detailed.to_excel(writer, sheet_name='Detailed_Results', index=False)
+                
+                # Summary statistics
+                summary_data = self._create_summary_data(stats)
+                summary_df = pd.DataFrame(summary_data)
+                summary_df.to_excel(writer, sheet_name='Summary_Statistics', index=False, header=False)
+            
+            print(f"💾 Results exported to: {output_path}")
+            return output_path
+            
+        except Exception as e:
+            print(f"❌ Error exporting results: {e}")
+            return None
+    
+    def _create_summary_data(self, stats):
+        """Create summary data untuk Excel"""
+        summary_data = [
+            ['ANALYSIS SUMMARY REPORT', ''],
+            ['Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ['', ''],
+            ['OVERALL STATISTICS', ''],
+            ['Total Tickets', stats['total_tickets']],
+            ['Successful Analysis', stats['successful_analysis']],
+            ['Failed Analysis', stats['failed_analysis']],
+            ['Success Rate', f"{stats['success_rate']*100:.1f}%"],
+            ['', '']
+        ]
+        
+        if 'issue_type_distribution' in stats:
+            summary_data.append(['ISSUE TYPE DISTRIBUTION', ''])
+            for issue_type, count in stats['issue_type_distribution'].items():
+                summary_data.append([f'{issue_type.title()} Issues', count])
+            summary_data.append(['', ''])
+        
+        if 'lead_time_stats' in stats:
+            lt_stats = stats['lead_time_stats']
+            summary_data.append(['LEAD TIME STATISTICS', ''])
+            summary_data.append(['First Reply Avg (min)', f"{lt_stats['first_reply_avg_minutes']:.1f}"])
+            summary_data.append(['Final Reply Avg (min)', f"{lt_stats['final_reply_avg_minutes']:.1f}"])
+            summary_data.append(['First Reply Samples', lt_stats['first_reply_samples']])
+            summary_data.append(['Final Reply Samples', lt_stats['final_reply_samples']])
+            summary_data.append(['', ''])
+        
+        if 'reply_effectiveness' in stats:
+            eff = stats['reply_effectiveness']
+            summary_data.append(['REPLY EFFECTIVENESS', ''])
+            summary_data.append(['First Reply Found Rate', f"{eff['first_reply_found_rate']*100:.1f}%"])
+            summary_data.append(['Final Reply Found Rate', f"{eff['final_reply_found_rate']*100:.1f}%"])
+            summary_data.append(['Customer Leave Cases', eff['customer_leave_cases']])
+        
+        return summary_data
 
 # Initialize Pipeline
-pipeline = CompleteAnalysisPipeline()
-
-print("✅ NEW REQUIREMENTS Analysis Pipeline Ready!")
-print("   ✓ Simplified logic: 1 main question per ticket")
-print("   ✓ Role support: Customer, Operator, Ticket Automation, Blank")
-print("   ✓ Complaint matching dengan phone number")
-print("   ✓ Customer leave detection dengan timeout 3 menit")
+print("✅ ENHANCED Analysis Pipeline Ready!")
+print("   ✓ New role handling (Ticket Automation & Blank)")
+print("   ✓ New issue type detection logic")
+print("   ✓ Complaint ticket matching")
+print("   ✓ Ticket reopened detection")
 print("=" * 60)
