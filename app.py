@@ -375,36 +375,6 @@ def display_enhanced_results():
         </div>
         """, unsafe_allow_html=True)
 
-    # SPECIAL CASES SUMMARY - Enhanced
-    if 'reply_effectiveness' in stats:
-        eff = stats['reply_effectiveness']
-        complaint_cases = stats.get('issue_type_distribution', {}).get('complaint', 0)
-        
-        if eff.get('customer_leave_cases', 0) > 0 or complaint_cases > 0:
-            st.markdown("---")
-            st.markdown("## 🚨 Special Cases Summary")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown('<div class="special-case">', unsafe_allow_html=True)
-                st.metric("Customer Leave Cases", eff.get('customer_leave_cases', 0))
-                st.caption("Detected by Ticket Automation messages")
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown('<div class="complaint-case">', unsafe_allow_html=True)
-                st.metric("Complaint Cases", complaint_cases)
-                st.caption("Matched from complaint system")
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col3:
-                serious_cases = stats.get('issue_type_distribution', {}).get('serious', 0)
-                st.markdown('<div class="special-case">', unsafe_allow_html=True)
-                st.metric("Serious Cases", serious_cases)
-                st.caption("With ticket reopened")
-                st.markdown('</div>', unsafe_allow_html=True)
-
     # DOWNLOAD SECTION
     st.markdown("---")
     st.markdown("## 💾 Download Analysis Report")
@@ -512,6 +482,12 @@ def display_enhanced_overview_tab(results, stats):
             st.plotly_chart(fig_perf, use_container_width=True)
         else:
             st.info("No performance distribution data available")
+    
+    st.markdown("### 🚨 Special Cases Summary")
+    st.markdown('<div class="special-case">', unsafe_allow_html=True)
+    st.metric("Customer Leave Cases", eff.get('customer_leave_cases', 0))
+    st.caption("Detected by Ticket Automation messages")
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Enhanced Summary Statistics
     st.markdown("### 📊 Summary Statistics")
@@ -1640,6 +1616,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
