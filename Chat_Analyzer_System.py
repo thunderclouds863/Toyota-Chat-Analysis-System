@@ -524,9 +524,8 @@ class ReplyAnalyzer:
         # Cari first reply (operator reply pertama setelah main question)
         first_reply = self._find_first_reply(ticket_df, main_issue['question_time'])
         
-        # Untuk complaint, final reply lead time dari file complaint
+        # PERBAIKAN: Untuk complaint, gunakan lead_time_days langsung, jangan convert ke minutes
         final_reply_lead_time_days = complaint_data.get('lead_time_days')
-        final_reply_lead_time_minutes = final_reply_lead_time_days * 24 * 60 if final_reply_lead_time_days else None
         
         analysis_result = {
             'issue_type': 'complaint',
@@ -534,7 +533,7 @@ class ReplyAnalyzer:
             'final_reply': {
                 'message': 'COMPLAINT_RESOLUTION',
                 'timestamp': None,
-                'lead_time_minutes': final_reply_lead_time_minutes,
+                'lead_time_minutes': None,  # PERBAIKAN: Tidak perlu minutes untuk complaint
                 'lead_time_days': final_reply_lead_time_days,
                 'note': 'Final resolution from complaint system'
             },
@@ -1099,6 +1098,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
