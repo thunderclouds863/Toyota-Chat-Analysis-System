@@ -329,42 +329,32 @@ class ConversationParser:
         current_question = None
         question_time = None
         
-        for idx, row in conv_df.iterrows():
-            role = str(row['Role']).lower()
-            message = str(row['Message'])
-            timestamp = row['parsed_timestamp']
-            
-            # CUSTOMER MESSAGE - potential question
-            if any(keyword in role for keyword in ['customer', 'user', 'pelanggan']):
-                if self._is_meaningful_question(message):
-                    # Jika ada previous question, simpan dulu
-                    if current_question:
-                        self._save_qa_pair(qa_pairs, current_question, question_time, None, None)
-                    
-                    # Start new question
-                    current_question = message
-                    question_time = timestamp
-                    print(f"   💬 Customer question: {message[:50]}...")
-            
-            # OPERATOR MESSAGE - potential answer
-            elif current_question and any(keyword in role for keyword in ['operator', 'agent', 'admin', 'cs']):
-                answer = message
-                
-                # Skip generic replies
-                if self._is_generic_reply(answer):
-                    continue
-                
-                # Pastikan ini jawaban (setelah question)
-                time_gap = (timestamp - question_time).total_seconds()
-                if time_gap >= 0:  
-                    lead_time = time_gap
-                    self._save_qa_pair(qa_pairs, current_question, question_time, answer, timestamp, role, lead_time)
-                    print(f"   ✅ Operator answer: {answer[:50]}... (LT: {lead_time/60:.1f}min)")
-                    
-                    # Reset untuk next question
-                    current_question = None
-                    question_time = None
+    for idx, row in conv_df.iterrows():
+        role = str(row['Role']).lower()
+        message = str(row['Message'])
+        timestamp = row['parsed_timestamp']
         
+        # PERBAIKAN: Handle semua role termasuk Ticket Automation dan Blank
+        if role in ['customer', 'user', 'pelanggan']:
+            # Process customer questions
+            if self._is_meaningful_question(message):
+                if current_question:
+                    self._save_qa_pair(qa_pairs, current_question, question_time, None, None)
+                current_question = message
+                question_time = timestamp
+        
+        # PERBAIKAN: Juga process Ticket Automation dan Blank roles untuk context
+        elif role in ['operator', 'agent', 'admin', 'cs', 'ticket automation', 'blank']:
+            if current_question and role in ['operator', 'agent', 'admin', 'cs']:
+                # Only operators can answer questions
+                if not self._is_generic_reply(message):
+                    time_gap = (timestamp - question_time).total_seconds()
+                    if time_gap >= 0:  
+                        lead_time = time_gap
+                        self._save_qa_pair(qa_pairs, current_question, question_time, message, timestamp, role, lead_time)
+                        current_question = None
+                        question_time = None
+                        
         # Handle last question jika ada
         if current_question:
             self._save_qa_pair(qa_pairs, current_question, question_time, None, None)
@@ -677,14 +667,10 @@ class ReplyAnalyzer:
         
         # Skip patterns untuk reply yang tidak mengandung solusi
         non_solution_patterns = [
-            'apabila sudah cukup',
-            'apakah sudah cukup', 
-            'apakah informasinya sudah cukup',
-            'terima kasih telah menghubungi',
-            'selamat beraktivitas',
-            'goodbye',
-            'bye',
-            'sampai jumpa'
+        'apabila sudah cukup', 'apakah sudah cukup', 'apakah informasinya sudah cukup',
+        'terima kasih telah menghubungi', 'selamat beraktivitas', 'goodbye', 'bye', 'sampai jumpa',
+        'baik bapak', 'baik ibu', 'semoga membantu', 'jika ada pertanyaan', 'jika masih ada pertanyaan',
+        'mohon diclose', 'terima kasih', 'thank you', 'semoga puas', 'senang bisa membantu'
         ]
         
         # Cari yang mengandung solusi dan BUKAN generic reply
@@ -707,26 +693,6 @@ class ReplyAnalyzer:
                     'note': 'Contains solution'
                 }
         
-        # Fallback: ambil operator reply pertama yang BUKAN generic
-        for _, msg in operator_messages.iterrows():
-            message = str(msg['Message']).lower()
-            
-            # Skip generic replies
-            if any(pattern in message for pattern in non_solution_patterns):
-                continue
-                
-            lead_time = (msg['parsed_timestamp'] - question_time).total_seconds()
-            
-            return {
-                'message': msg['Message'],
-                'timestamp': msg['parsed_timestamp'],
-                'lead_time_seconds': lead_time,
-                'lead_time_minutes': round(lead_time / 60, 2),
-                'lead_time_hhmmss': self._seconds_to_hhmmss(lead_time),
-                'note': 'First non-generic operator reply'
-            }
-        
-        return None
     
     def _find_ticket_reopened_time(self, ticket_df):
         """Cari timestamp ketika ticket di-reopen"""
@@ -1226,6 +1192,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
