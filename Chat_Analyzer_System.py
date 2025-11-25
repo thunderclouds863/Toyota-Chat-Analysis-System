@@ -329,31 +329,31 @@ class ConversationParser:
         current_question = None
         question_time = None
         
-    for idx, row in conv_df.iterrows():
-        role = str(row['Role']).lower()
-        message = str(row['Message'])
-        timestamp = row['parsed_timestamp']
-        
-        # PERBAIKAN: Handle semua role termasuk Ticket Automation dan Blank
-        if role in ['customer', 'user', 'pelanggan']:
-            # Process customer questions
-            if self._is_meaningful_question(message):
-                if current_question:
-                    self._save_qa_pair(qa_pairs, current_question, question_time, None, None)
-                current_question = message
-                question_time = timestamp
-        
-        # PERBAIKAN: Juga process Ticket Automation dan Blank roles untuk context
-        elif role in ['operator', 'agent', 'admin', 'cs', 'ticket automation', 'blank']:
-            if current_question and role in ['operator', 'agent', 'admin', 'cs']:
-                # Only operators can answer questions
-                if not self._is_generic_reply(message):
-                    time_gap = (timestamp - question_time).total_seconds()
-                    if time_gap >= 0:  
-                        lead_time = time_gap
-                        self._save_qa_pair(qa_pairs, current_question, question_time, message, timestamp, role, lead_time)
-                        current_question = None
-                        question_time = None
+        for idx, row in conv_df.iterrows():
+            role = str(row['Role']).lower()
+            message = str(row['Message'])
+            timestamp = row['parsed_timestamp']
+            
+            # PERBAIKAN: Handle semua role termasuk Ticket Automation dan Blank
+            if role in ['customer', 'user', 'pelanggan']:
+                # Process customer questions
+                if self._is_meaningful_question(message):
+                    if current_question:
+                        self._save_qa_pair(qa_pairs, current_question, question_time, None, None)
+                    current_question = message
+                    question_time = timestamp
+            
+            # PERBAIKAN: Juga process Ticket Automation dan Blank roles untuk context
+            elif role in ['operator', 'agent', 'admin', 'cs', 'ticket automation', 'blank']:
+                if current_question and role in ['operator', 'agent', 'admin', 'cs']:
+                    # Only operators can answer questions
+                    if not self._is_generic_reply(message):
+                        time_gap = (timestamp - question_time).total_seconds()
+                        if time_gap >= 0:  
+                            lead_time = time_gap
+                            self._save_qa_pair(qa_pairs, current_question, question_time, message, timestamp, role, lead_time)
+                            current_question = None
+                            question_time = None
                         
         # Handle last question jika ada
         if current_question:
@@ -1192,6 +1192,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
